@@ -1,0 +1,53 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Core tests
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\test.ps1
+      - name: Build application
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\build.ps1
+      - name: Native service scheduling and notification tests
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\test-service.ps1
+      - name: PowerShell parse and setup contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & tests\PowerShell.Parse.Tests.ps1
+          & tests\Setup.Contracts.Tests.ps1
+          & tests\Setup.Ui.Tests.ps1
+          & tests\Service.Wts.Tests.ps1
+          & tests\Countdown.Clock.Tests.ps1
+          & tests\Worker.Startup.Tests.ps1
+          & tests\Worker.Status.Tests.ps1
+          & tests\Status.Handoff.Tests.ps1
+      - name: Elevated worker and UI rejection
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Worker.Smoke.Tests.ps1
+      - name: Required actual production SCM lifecycle
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Setup.Tests.ps1 -RequireAdmin
+      - name: Required protected ownership safety
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Setup.Safety.Tests.ps1 -RequireAdmin
+      - name: Required interrupted machine recovery
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Setup.Recovery.Tests.ps1 -RequireAdmin
+      - name: Required actual SCM test host notification and failed-stop coverage
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Service.Scm.Tests.ps1 -RequireAdmin
+      - name: Required extracted package SCM integration
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\Package.Tests.ps1 -RequireAdmin
+      - name: Package release layout
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\package.ps1 -RequireClean
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-package
+          path: |
+            artifacts/VencordAutoUpdate-0.1.0-windows.zip
+            artifacts/SHA256SUMS

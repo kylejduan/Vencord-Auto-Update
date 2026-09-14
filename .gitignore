@@ -1,0 +1,6 @@
+artifacts/
+.superpowers/
+*.user
+*.suo
+bin/
+obj/

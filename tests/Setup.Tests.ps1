@@ -16,7 +16,7 @@ try {
     foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) {
         $path=Join-Path $f.Paths.Destination $name
         [VencordSetup.Paths]::Protected($path)
-        Check ([Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileVersion -eq '0.1.1.0') "$name version and effective protected ACL"
+        Check ([Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileVersion -eq '0.1.2.0') "$name version and effective protected ACL"
     }
     $process=[Diagnostics.Process]::GetProcessById([int]$s.Pid)
     try { $cpu=$process.TotalProcessorTime; Start-Sleep -Seconds 2; $process.Refresh(); Write-Output ("OBSERVATION actual production SCM 2s CPU delta={0}ms workingSet={1} session={2}" -f ($process.TotalProcessorTime-$cpu).TotalMilliseconds,$process.WorkingSet64,$process.SessionId) }

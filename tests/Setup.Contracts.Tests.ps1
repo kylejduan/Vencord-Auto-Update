@@ -39,6 +39,9 @@ $acl = [Security.AccessControl.DirectorySecurity]::new()
 $acl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
 $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'),[Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles,[Security.AccessControl.AccessControlType]::Allow))
 Refuses { [VencordSetup.Paths]::CheckAcl($acl,$false) } 'ancestor delete-child ACL refused'
+$writable=Join-Path ([IO.Path]::GetTempPath()) ('vau-acl-'+[Guid]::NewGuid().ToString('N')); [void][IO.Directory]::CreateDirectory($writable)
+try { $named=$false; try { [VencordSetup.Paths]::Protected($writable) } catch { $named=$_.Exception.InnerException.Message.Contains("Path: $writable") }; Check $named 'ACL refusal names the exact path to fix' }
+finally { [IO.Directory]::Delete($writable) }
 Check (-not (Test-Path -LiteralPath $root)) 'contract tests create no machine installation'
 # Exact QueryServiceObjectSecurity readback from a Windows CI run.
 # Exercise the same binary descriptor round trip used by setup, without SCM I/O.

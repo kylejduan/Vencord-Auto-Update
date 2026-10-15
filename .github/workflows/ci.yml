@@ -49,5 +49,5 @@ jobs:
         with:
           name: windows-package
           path: |
-            artifacts/VencordAutoUpdate-0.1.1-windows.zip
+            artifacts/VencordAutoUpdate-0.1.2-windows.zip
             artifacts/SHA256SUMS

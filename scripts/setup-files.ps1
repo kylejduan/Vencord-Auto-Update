@@ -54,7 +54,7 @@ function Get-SetupSources([string]$SourceDirectory) {
     }
     foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) {
         $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($sources[$name])
-        if ($version.FileVersion -ne '0.1.1.0') { throw "Unexpected $name version. Build both reviewed binaries before setup." }
+        if ($version.FileVersion -ne '0.1.2.0') { throw "Unexpected $name version. Build both reviewed binaries before setup." }
     }
     return $sources
 }

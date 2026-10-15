@@ -39,10 +39,13 @@ internal static class TrustedPaths {
     internal static string RequireProtectedBinary(string path) {
         path=RequireLocal(path);string programFiles=RequireLocal(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
         if(!IsUnder(path,programFiles) || !File.Exists(path))throw new IOException("Binary must be installed beneath Program Files.");
-        RequireAcl(File.GetAccessControl(path),true);
+        RequireNamed(File.GetAccessControl(path),true,path);
         bool installDirectory=true;
-        for(string current=Path.GetDirectoryName(path);!String.IsNullOrEmpty(current);current=Path.GetDirectoryName(current)) {RequireAcl(Directory.GetAccessControl(current),installDirectory);installDirectory=false;}
+        for(string current=Path.GetDirectoryName(path);!String.IsNullOrEmpty(current);current=Path.GetDirectoryName(current)) {RequireNamed(Directory.GetAccessControl(current),installDirectory,current);installDirectory=false;}
         return path;
+    }
+    static void RequireNamed(FileSystemSecurity acl,bool target,string path) {
+        try{RequireAcl(acl,target);}catch(UnauthorizedAccessException e){throw new UnauthorizedAccessException(e.Message+" Path: "+path,e);}
     }
 }
 }

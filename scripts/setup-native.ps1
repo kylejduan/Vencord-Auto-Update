@@ -30,8 +30,10 @@ public static class Paths {
             try{attributes=File.GetAttributes(p);}
             catch(FileNotFoundException){target=false;continue;}
             catch(DirectoryNotFoundException){target=false;continue;}
-            if((attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Reparse target or ancestor refused.");
-            CheckAcl((attributes&FileAttributes.Directory)!=0?(FileSystemSecurity)Directory.GetAccessControl(p):File.GetAccessControl(p),target);
+            if((attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Reparse target or ancestor refused: "+p);
+            // Name the refused path so the owner can restore default Windows permissions on it.
+            try{CheckAcl((attributes&FileAttributes.Directory)!=0?(FileSystemSecurity)Directory.GetAccessControl(p):File.GetAccessControl(p),target);}
+            catch(UnauthorizedAccessException e){throw new UnauthorizedAccessException(e.Message+" Path: "+p+". Only SYSTEM, Administrators and TrustedInstaller may own, change or delete it; restore its default Windows permissions, then retry setup.",e);}
             target=false;
         }
     }

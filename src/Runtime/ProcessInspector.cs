@@ -16,7 +16,8 @@ internal sealed class ProcessIdentity {
 internal sealed class ProcessSnapshot {
     internal bool Known=true, Updater;
     internal readonly List<ProcessIdentity> Discord=new List<ProcessIdentity>();
-    internal string Cohort { get { var values=new List<string>();foreach(var p in Discord) values.Add(p.Key); values.Sort(StringComparer.Ordinal);return String.Join(";",values); } }
+    // Persisted per generation, so keep a bounded digest of the exact identities instead of their paths.
+    internal string Cohort { get { if(Discord.Count==0)return ""; var values=new List<string>();foreach(var p in Discord) values.Add(p.Key); values.Sort(StringComparer.Ordinal);return SafePath.TextHash(String.Join(";",values)); } }
     internal DateTime? Oldest { get { DateTime? result=null;foreach(var p in Discord) {DateTime t=new DateTime(p.StartTicks,DateTimeKind.Utc);if(!result.HasValue || t<result.Value)result=t;}return result; } }
     internal bool Quiet { get {return Known && !Updater && Discord.Count==0;} }
 }

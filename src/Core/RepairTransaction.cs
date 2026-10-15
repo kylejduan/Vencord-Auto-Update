@@ -18,7 +18,7 @@ internal static class RepairTransaction {
             if (candidate == null) throw new IOException("A candidate is required.");
             Installation fresh = Installation.Inspect(candidate.Root,candidate.Executable,candidate.Dist);
             if (!Equivalent(candidate,fresh)) throw new IOException("Candidate changed; observe and inspect again.");
-            if (fresh.Kind == InstallationKind.Healthy) return new RepairResult(true,false,"Already healthy.",fresh);
+            if (fresh.Kind == InstallationKind.Healthy) { RetireCompletedJournal(fresh,loader); return new RepairResult(true,false,"Already healthy.",fresh); }
             if (fresh.Kind != InstallationKind.Stock && fresh.Kind != InstallationKind.Interrupted) throw new IOException("Repair refused: " + fresh.Reason);
             if (loader == null || !SafePath.Same(loader.Dist,candidate.Dist)) throw new IOException("A validated loader for the expected Vencord dist is required.");
             loader.Validate();
@@ -42,20 +42,39 @@ internal static class RepairTransaction {
                 Checkpoint(checkpoint,"BeforeOriginalMove"); Gate(quiescent);
                 fresh = VerifyState(candidate,loader,false); VerifyJournal(journalPath,candidate,loader,journal); VerifyTemporary(temporary,loader);
                 if (fresh.Kind != InstallationKind.Stock) throw new IOException("Source changed before original rename.");
-                NativeFiles.MoveNew(app,original); changed = true; Checkpoint(checkpoint,"OriginalMoved");
+                NativeFiles.MoveNewVerified(app,original,fresh.OriginalHash); changed = true; Checkpoint(checkpoint,"OriginalMoved");
             }
             Checkpoint(checkpoint,"BeforeLoaderMove"); Gate(quiescent);
             fresh = VerifyState(candidate,loader,false); VerifyJournal(journalPath,candidate,loader,journal); VerifyTemporary(temporary,loader);
             if (fresh.Kind != InstallationKind.Interrupted) throw new IOException("Destination changed before loader rename.");
-            NativeFiles.MoveNew(temporary,app); changed = true; Checkpoint(checkpoint,"LoaderMoved");
+            NativeFiles.MoveNewVerified(temporary,app,loader.Hash); changed = true; Checkpoint(checkpoint,"LoaderMoved");
             fresh = VerifyState(candidate,loader,true);
-            Gate(quiescent); VerifyState(candidate,loader,true); VerifyJournal(journalPath,candidate,loader,journal);
-            SafePath.Local(journalPath); File.Delete(journalPath);
+            Gate(quiescent); VerifyState(candidate,loader,true);
+            if (!NativeFiles.DeleteVerified(journalPath,RepairJournal.MaximumBytes,delegate(byte[] bytes) { return RepairJournal.Parse(bytes,candidate,loader).Temporary == journal.Temporary; })) throw new IOException("Journal changed; evidence retained.");
             return new RepairResult(true,true,"Loader and preserved original verified.",fresh);
         } catch (Exception e) {
             if (!(e is IOException) && !(e is UnauthorizedAccessException) && !(e is ArgumentException) && !(e is NotSupportedException) && !(e is InvalidOperationException)) throw;
             // No automatic rollback: preserved original, staging file and journal remain evidence.
             return new RepairResult(false,changed,e.Message,candidate == null ? null : Installation.Inspect(candidate.Root,candidate.Executable,candidate.Dist));
+        }
+    }
+    // A crash after the final rename leaves a healthy installation and this generation's journal.
+    // Remove only that exact completed journal; any other journal or a remaining staging file stays as evidence.
+    internal static bool RetireCompletedJournal(Installation healthy, ValidatedLoader loader) {
+        try {
+            if (healthy == null || loader == null || healthy.Kind != InstallationKind.Healthy || healthy.LoaderHash != loader.Hash) return false;
+            string journalPath = Path.Combine(healthy.Resources,JournalName); SafePath.Local(journalPath);
+            if (!File.Exists(journalPath)) return false;
+            Installation fresh = Installation.Inspect(healthy.Root,healthy.Executable,healthy.Dist);
+            if (fresh.Kind != InstallationKind.Healthy || fresh.Generation != healthy.Generation || fresh.LoaderHash != loader.Hash) return false;
+            // The journal is parsed from the same held file object that is deleted.
+            return NativeFiles.DeleteVerified(journalPath,RepairJournal.MaximumBytes,delegate(byte[] bytes) {
+                RepairJournal journal = RepairJournal.Parse(bytes,fresh,loader);
+                return !File.Exists(Path.Combine(fresh.Resources,journal.Temporary));
+            });
+        } catch (Exception e) {
+            if (!(e is IOException) && !(e is UnauthorizedAccessException) && !(e is ArgumentException) && !(e is NotSupportedException)) throw;
+            return false;
         }
     }
     static bool Equivalent(Installation a, Installation b) {

@@ -19,9 +19,13 @@ internal sealed class RepairJournal {
         return new RepairJournal(map);
     }
     internal byte[] Bytes() { return Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(values)); }
+    internal const int MaximumBytes = 16384;
     internal static RepairJournal Read(string path, Installation candidate, ValidatedLoader loader) {
-        SafePath.RequireFile(path); if (new FileInfo(path).Length > 16384) throw new IOException("Oversized repair journal retained.");
-        Dictionary<string, object> map = StrictJson.Object(StrictJson.Parse(new UTF8Encoding(false,true).GetString(SafePath.ReadBounded(path,16384))));
+        SafePath.RequireFile(path); if (new FileInfo(path).Length > MaximumBytes) throw new IOException("Oversized repair journal retained.");
+        return Parse(SafePath.ReadBounded(path,MaximumBytes),candidate,loader);
+    }
+    internal static RepairJournal Parse(byte[] bytes, Installation candidate, ValidatedLoader loader) {
+        Dictionary<string, object> map = StrictJson.Object(StrictJson.Parse(new UTF8Encoding(false,true).GetString(bytes)));
         object schema;
         if (map.Count != 10 || !map.TryGetValue("schema",out schema) || !(schema is decimal) || (decimal)schema != 1 || StrictJson.String(map,"owner") != "VencordAutoUpdate") throw new IOException("Foreign or corrupt repair journal retained.");
         foreach (KeyValuePair<string,string> pair in new Dictionary<string,string> {

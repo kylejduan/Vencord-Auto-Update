@@ -34,7 +34,7 @@ internal sealed class StatusForm : Form {
     void Preferences() {if(!updating) {if(!supervisor.SetPreferences(paused.Checked,automatic.Checked))MessageBox.Show(this,supervisor.Store.Error,"Preferences could not be saved");if(PreferencesChanged!=null)PreferencesChanged();}}
     internal void RefreshStatus() {
         int selected=status.SelectedIndex;status.BeginUpdate();status.Items.Clear();
-        foreach(var s in supervisor.Channels)status.Items.Add(s.Channel.Executable+": "+s.Message);
+        foreach(var s in supervisor.Channels)status.Items.Add(s.Channel.Executable+": "+s.Message+(s.Failure!=null && s.Failure!=s.Message?" Last restart problem: "+s.Failure:""));
         if(status.Items.Count==0)status.Items.Add("No supported Discord installation found. Install Discord and Vencord first.");
         status.SelectedIndex=Math.Min(Math.Max(selected,0),status.Items.Count-1);status.EndUpdate();
         updating=true;paused.Checked=supervisor.Store.Value.Paused;automatic.Checked=supervisor.Store.Value.Automatic;updating=false;
@@ -64,6 +64,7 @@ internal sealed class StatusForm : Form {
         if(supervisor.Stopping) return;
         RefreshStatus();
         if(!started) MessageBox.Show(this,channel.Message,"Repair status");
+        else if(channel.Failure!=null) MessageBox.Show(this,channel.Failure,"Repair status");
     }
 }
 }

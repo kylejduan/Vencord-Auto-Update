@@ -25,7 +25,7 @@ try {
         Assert-SetupDirectory $paths
         if (-not (Assert-SetupService $paths)) { [VencordSetup.Scm]::Create($paths.ServiceName,('"'+$paths.ServiceExecutable+'"'),(Get-SetupDescription $paths)) }
         Start-SetupService $paths
-        Write-SetupDurable (Join-Path $paths.Recovery 'committed') (Get-SetupHash (Join-Path $paths.Recovery 'record.json'))
+        Publish-SetupDurable (Join-Path $paths.Recovery 'committed') (Get-SetupHash (Join-Path $paths.Recovery 'record.json'))
         Complete-SetupRecovery $paths
     } catch {
         $failure=$_

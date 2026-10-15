@@ -73,6 +73,7 @@ public static class Scm {
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool QueryServiceConfig(IntPtr service,IntPtr buffer,uint size,out uint needed);
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool QueryServiceConfig2(IntPtr service,uint level,IntPtr buffer,uint size,out uint needed);
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool ChangeServiceConfig2(IntPtr service,uint level,IntPtr info);
+    [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool ChangeServiceConfig(IntPtr service,uint type,uint start,uint error,string image,string group,IntPtr tag,string deps,string account,string password,string display);
     [DllImport("advapi32.dll",SetLastError=true)]static extern bool QueryServiceStatusEx(IntPtr service,int level,out Status status,uint size,out uint needed);
     [DllImport("advapi32.dll",SetLastError=true)]static extern bool QueryServiceObjectSecurity(IntPtr service,uint info,IntPtr sd,uint size,out uint needed);
     [DllImport("advapi32.dll",SetLastError=true)]static extern bool SetServiceObjectSecurity(IntPtr service,uint info,byte[] sd);
@@ -101,11 +102,16 @@ public static class Scm {
     public static void Create(string name,string image,string description) {
         IntPtr scm=OpenSCManager(null,null,3);if(scm==IntPtr.Zero)throw new Win32Exception();IntPtr h=IntPtr.Zero;
         try {
-            h=CreateService(scm,name,name,0xf01ff,0x10,2,1,image,null,IntPtr.Zero,null,"LocalSystem",null);if(h==IntPtr.Zero)throw new Win32Exception();
+            // Created demand-start and switched to automatic last, so a reboot cannot start a partially
+            // configured service. A configuration failure removes it; a crash is left for recovery.
+            h=CreateService(scm,name,name,0xf01ff,0x10,3,1,image,null,IntPtr.Zero,null,"LocalSystem",null);if(h==IntPtr.Zero)throw new Win32Exception();
+            try {
             var sd=new RawSecurityDescriptor(Security);byte[] bytes=new byte[sd.BinaryLength];sd.GetBinaryForm(bytes,0);Check(SetServiceObjectSecurity(h,7,bytes));
             IntPtr actions=Marshal.AllocHGlobal(32),data=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Failure))),empty=Marshal.StringToHGlobalUni("");
             try{for(int i=0;i<4;i++){Marshal.WriteInt32(actions,i*8,i<3?1:0);Marshal.WriteInt32(actions,i*8+4,i<3?60000:0);}var f=new Failure{Reset=86400,Command=empty,Reboot=empty,Count=4,Actions=actions};Marshal.StructureToPtr(f,data,false);Check(ChangeServiceConfig2(h,2,data));Marshal.WriteInt32(data,0);Check(ChangeServiceConfig2(h,4,data));Check(ChangeServiceConfig2(h,3,data));}finally{Marshal.FreeHGlobal(actions);Marshal.FreeHGlobal(data);Marshal.FreeHGlobal(empty);}
             IntPtr text=Marshal.StringToHGlobalUni(description),ptr=Marshal.AllocHGlobal(IntPtr.Size);try{Marshal.WriteIntPtr(ptr,text);Check(ChangeServiceConfig2(h,1,ptr));}finally{Marshal.FreeHGlobal(text);Marshal.FreeHGlobal(ptr);}
+            Check(ChangeServiceConfig(h,0xffffffff,2,0xffffffff,null,null,IntPtr.Zero,null,null,null,null));
+            }catch{DeleteService(h);throw;}
         }finally{if(h!=IntPtr.Zero)CloseServiceHandle(h);CloseServiceHandle(scm);}
     }
     public static void Start(string name){IntPtr h=Open(name,0x10);if(h==IntPtr.Zero)throw new Win32Exception();try{Check(StartService(h,0,IntPtr.Zero));}finally{CloseServiceHandle(h);}}

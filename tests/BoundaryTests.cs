@@ -106,6 +106,51 @@ internal static class BoundaryTests {
             TestRunner.Assert(!crash.Success,"checkpoint did not interrupt");
             RepairResult recovered = RepairTransaction.Repair(f.Inspect(),loader,delegate { return true; },null);
             TestRunner.Assert(recovered.Success && File.ReadAllBytes(Path.Combine(f.Resources,"_app.asar")).SequenceEqual(original),"checkpoint recovery lost original");
+            TestRunner.Assert(!File.Exists(Path.Combine(f.Resources,RepairTransaction.JournalName)),"recovered transaction left its journal at " + stop);
+            TestRunner.Assert(Directory.GetFiles(f.Resources,".vencord-auto-update.*").Length == 0,"recovered transaction left staging at " + stop);
+        } });
+        TestRunner.Run("healthy supervision retires a completed journal", delegate { using (Fixtures f = new Fixtures()) {
+            ValidatedLoader loader = Cache(f); f.Write("app.asar",Fixtures.Stock("completed"));
+            RepairResult crash = RepairTransaction.Repair(f.Inspect(),loader,delegate { return true; },delegate(string point) { if (point == "LoaderMoved") throw new IOException("simulated interruption"); });
+            TestRunner.Assert(!crash.Success && f.Inspect().Kind == InstallationKind.Healthy,"interruption did not leave healthy archives");
+            string journal = Path.Combine(f.Resources,RepairTransaction.JournalName);
+            TestRunner.Assert(File.Exists(journal),"fixture did not retain the completed journal");
+            TestRunner.Assert(RepairTransaction.RetireCompletedJournal(f.Inspect(),loader) && !File.Exists(journal),"completed journal was not retired");
+        } });
+        TestRunner.Run("foreign or mismatched journals are never retired", delegate { using (Fixtures f = new Fixtures()) {
+            ValidatedLoader loader = Cache(f); f.Write("app.asar",Fixtures.Stock("foreign"));
+            RepairTransaction.Repair(f.Inspect(),loader,delegate { return true; },delegate(string point) { if (point == "LoaderMoved") throw new IOException("simulated interruption"); });
+            string journal = Path.Combine(f.Resources,RepairTransaction.JournalName);
+            File.WriteAllText(journal,"{\"owner\":\"someone else\"}");
+            TestRunner.Assert(!RepairTransaction.RetireCompletedJournal(f.Inspect(),loader) && File.Exists(journal),"foreign journal removed");
+        } });
+        TestRunner.Run("verified deletion removes only the validated file object", delegate { using (Fixtures f = new Fixtures()) {
+            string path = Path.Combine(f.Resources,"journal.bin");
+            File.WriteAllText(path,"keep");
+            TestRunner.Assert(!NativeFiles.DeleteVerified(path,16384,delegate(byte[] b) { return System.Text.Encoding.UTF8.GetString(b) == "delete"; }) && File.Exists(path),"unvalidated bytes deleted");
+            File.WriteAllText(path,"delete");
+            TestRunner.Assert(NativeFiles.DeleteVerified(path,16384,delegate(byte[] b) { return System.Text.Encoding.UTF8.GetString(b) == "delete"; }) && !File.Exists(path),"validated bytes not deleted");
+        } });
+        TestRunner.Run("verified rename moves only the validated bytes", delegate { using (Fixtures f = new Fixtures()) {
+            string source = Path.Combine(f.Resources,"source.bin"), target = Path.Combine(f.Resources,"target.bin"), other = Path.Combine(f.Resources,"other.bin");
+            File.WriteAllText(source,"validated");
+            string expected = SafePath.Hash(source);
+            File.WriteAllText(source,"replaced after validation");
+            bool refused = false; try { NativeFiles.MoveNewVerified(source,target,expected); } catch (IOException) { refused = true; }
+            TestRunner.Assert(refused && File.Exists(source) && !File.Exists(target),"changed source was renamed");
+            File.WriteAllText(source,"validated"); File.WriteAllText(other,"existing");
+            refused = false; try { NativeFiles.MoveNewVerified(source,other,expected); } catch (IOException) { refused = true; }
+            TestRunner.Assert(refused && File.ReadAllText(other) == "existing" && File.Exists(source),"verified rename replaced an existing destination");
+            NativeFiles.MoveNewVerified(source,target,expected);
+            TestRunner.Assert(!File.Exists(source) && File.ReadAllText(target) == "validated","verified rename did not move the file");
+        } });
+        TestRunner.Run("verified rename holds the source against writers", delegate { using (Fixtures f = new Fixtures()) {
+            string source = Path.Combine(f.Resources,"held.bin");
+            File.WriteAllText(source,"held"); string expected = SafePath.Hash(source);
+            using (FileStream writer = new FileStream(source,FileMode.Open,FileAccess.Write,FileShare.ReadWrite | FileShare.Delete)) {
+                bool refused = false; try { NativeFiles.MoveNewVerified(source,Path.Combine(f.Resources,"moved.bin"),expected); } catch (IOException e) { refused = e.Message.StartsWith("Cannot hold rename source"); }
+                TestRunner.Assert(refused && File.Exists(source),"rename proceeded while another writer held the source");
+            }
         } });
         TestRunner.Run("gate checked before every transaction mutation", delegate { for (int failure = 1; failure <= 5; failure++) using (Fixtures f = new Fixtures()) {
             ValidatedLoader loader = Cache(f); byte[] original = Fixtures.Stock("gates"); f.Write("app.asar",original); int calls = 0;

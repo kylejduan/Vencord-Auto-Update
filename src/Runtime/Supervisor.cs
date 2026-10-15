@@ -10,12 +10,15 @@ internal interface ISupervisorHost {
     bool Stop(Channel channel,ProcessSnapshot cohort);
     bool Launch(Channel channel);
     void Countdown(string channel,Func<bool> valid,Action<bool> finished);
-    void Notify(string message);
+    // A failure follows a restart the user saw or a failed post-restart check; the host must make it visible.
+    void Notify(string message,bool failure);
 }
 internal sealed class ChannelStatus {
     internal readonly Channel Channel;
     internal Installation Installation;
     internal string Metadata, Settling, Message="Waiting for first scan.";
+    // The last restart problem stays visible after later polls replace Message.
+    internal string Failure;
     internal DateTime SettledSince;
     internal bool Seeded;
     internal WorkerResult? Outcome;
@@ -70,7 +73,13 @@ internal sealed class Supervisor {
         foreach(var channel in roots)channels.Add(new ChannelStatus(channel));
     }
     internal void RefreshChannels(IList<Channel> roots) {
-        foreach(var channel in roots)if(!channels.Exists(s=>SafePath.Same(s.Channel.Root,channel.Root)))channels.Add(new ChannelStatus(channel));
+        foreach(var channel in roots) {
+            int index=channels.FindIndex(s=>SafePath.Same(s.Channel.Root,channel.Root) || (s.Channel.Executable==channel.Executable && (s.Channel.Refusal!=null || channel.Refusal!=null)));
+            if(index<0) {channels.Add(new ChannelStatus(channel));continue;}
+            // A root that became supported (or unsupported) is rediscovered, never while it has work in flight.
+            ChannelStatus existing=channels[index];
+            if((existing.Channel.Refusal==null)!=(channel.Refusal==null) && !busy && (pending==null || pending.Status!=existing)) channels[index]=new ChannelStatus(channel);
+        }
     }
     internal void Shutdown() {
         // Cancel consent immediately. An entered disk transaction keeps its live safety guards
@@ -96,6 +105,7 @@ internal sealed class Supervisor {
     void Poll(ChannelStatus status) {
         Channel channel=status.Channel;
         status.Outcome=null;
+        if(channel.Refusal!=null){status.Message=channel.Refusal;status.Outcome=WorkerResult.Refused;return;}
         ProcessSnapshot processes=host.Snapshot(channel);
         // A delayed, persisted post-launch check catches changes made after Update.exe starts.
         var verification=store.Value.Generations.Find(g=>g.VerifyAfter!=0 && g.Key.StartsWith(channel.Root+"|",StringComparison.OrdinalIgnoreCase));
@@ -111,7 +121,8 @@ internal sealed class Supervisor {
             status.Metadata=null;
             if(failed) {
                 status.Message="Post-restart verification failed; automatic restarts disabled. Repair & Restart remains available.";
-                host.Notify(status.Message);
+                status.Failure=status.Message;
+                host.Notify(status.Message,true);
                 status.Outcome=WorkerResult.Refused;
                 return;
             }
@@ -123,7 +134,7 @@ internal sealed class Supervisor {
         Installation installation=status.Installation;
         if(installation.Kind==InstallationKind.Healthy) {
             status.Message=store.Writable?"Healthy: loader and original verified.":"Healthy files; automatic work disabled: "+store.Error;
-            if(store.Writable && !store.Value.Paused && !status.Seeded) {cache.Capture(installation);status.Seeded=true;}
+            if(store.Writable && !store.Value.Paused && !status.Seeded) {RepairTransaction.RetireCompletedJournal(installation,cache.Capture(installation));status.Seeded=true;}
             status.Outcome=WorkerResult.Done;
             return;
         }
@@ -132,7 +143,7 @@ internal sealed class Supervisor {
         GenerationState generation=store.Find(installation.Generation);
         if(generation==null) {
             generation=RestartPolicy.First(installation.Generation,processes.Cohort,host.Now,processes.Oldest,host.Interactive && processes.Known);
-            if(!store.Add(generation)){status.Message=store.Error;status.Outcome=WorkerResult.Refused;return;}
+            if(!store.Add(generation,g=>Obsolete(g,host.Now))){status.Message=store.Error;status.Outcome=WorkerResult.Refused;return;}
         }
         if(processes.Discord.Count>0 && !generation.Deferred &&
             (store.Value.Paused || !store.Value.Automatic || !host.Interactive || generation.Cohort!=processes.Cohort)) {
@@ -166,6 +177,24 @@ internal sealed class Supervisor {
             status.Message="Restart countdown: choose Not now to defer.";
             host.Countdown(channel.Executable,()=>Valid(request),accepted=>Complete(request,accepted));
         }
+    }
+    // Retire only history that no longer limits anything: the version directory is provably gone
+    // from a readable root, no verification is pending or failed, and any spent restart allowance
+    // is older than 30 days. A version reinstalled after that can earn at most one more restart,
+    // still bounded by the global ten-minute cooldown.
+    internal static bool Obsolete(GenerationState state,DateTime now) {
+        if(state.VerifyAfter!=0 || state.VerificationFailed) return false;
+        bool spent=state.Reserved || state.Attempts>0;
+        if(spent && (state.LastAttempt==0 || now.Ticks-state.LastAttempt<TimeSpan.FromDays(30).Ticks)) return false;
+        string[] parts=state.Key.Split('|');
+        if(parts.Length!=3) return false;
+        try {
+            string root=SafePath.Local(parts[0]);
+            if(!Directory.Exists(root)) return false;
+            // Enumeration fails loudly on access errors, unlike Directory.Exists on the version itself.
+            return Directory.GetDirectories(root,"app-"+parts[1],SearchOption.TopDirectoryOnly).Length==0;
+        }
+        catch(Exception e) { if(!(e is IOException) && !(e is UnauthorizedAccessException) && !(e is ArgumentException) && !(e is NotSupportedException)) throw; return false; }
     }
     void StableRefusal(ChannelStatus status,string metadata) {
         if(status.RefusalMetadata!=metadata) {status.RefusalMetadata=metadata;status.RefusalSince=host.Now;}
@@ -247,44 +276,47 @@ internal sealed class Supervisor {
                 return false;
             }
             if(!CanWork())return false;
-            bool stopped=false;
+            bool stopped=false,repaired=false;
             try {
                 stopped=host.Stop(channel,request.Processes);
                 if(!stopped) {
                     request.Status.Message="Full exit could not be established; repair deferred.";
                     return true;
                 }
-                Repair(request.Status,request.State,true);
+                repaired=Repair(request.Status,request.State,true);
                 return true;
             } finally {
                 pending=null;
                 // Restore a session we stopped even if shutdown was requested meanwhile.
                 // A new/remaining process cohort blocks launching a duplicate session.
-                Reopen(request,stopped);
-                host.Notify(request.Status.Message);
+                bool reopened=Reopen(request,stopped),failed=!stopped || !repaired || !reopened;
+                request.Status.Failure=failed?request.Status.Message:null;
+                host.Notify(request.Status.Message,failed);
             }
         } finally {
             busy=wasBusy;
         }
     }
-    void Reopen(PendingRestart request,bool stopped) {
+    bool Reopen(PendingRestart request,bool stopped) {
         Channel channel=request.Status.Channel;
-        if(!host.Snapshot(channel).Quiet) return;
+        if(!host.Snapshot(channel).Quiet) return true;
         request.State.VerifyAfter=host.Now.AddSeconds(30).Ticks;
         if(!store.Save()) request.Status.Message=store.Error;
         // One bounded reopening attempt, including when state persistence failed after stop.
         if(!host.Launch(channel)) {
             request.Status.Message="Discord could not be reopened through Update.exe. Start Discord normally.";
             FailedVerification(request.State);
-            return;
+            return false;
         }
         if(stopped) {
             Installation after=Installation.Inspect(channel.Root,channel.Executable,dist);
             if(after.Kind!=InstallationKind.Healthy) {
                 request.Status.Message="Post-restart file verification failed; automatic restarts disabled. Repair & Restart remains available.";
                 FailedVerification(request.State);
+                return false;
             }
         }
+        return true;
     }
     void FailedVerification(GenerationState state) {
         state.VerifyAfter=0;
@@ -292,8 +324,8 @@ internal sealed class Supervisor {
         store.Value.Automatic=false;
         store.Save();
     }
-    void Repair(ChannelStatus status,GenerationState generation,bool charged) {
-        if(!CanWork()) return;
+    bool Repair(ChannelStatus status,GenerationState generation,bool charged) {
+        if(!CanWork()) return false;
         bool acquired=false;
         using(Mutex gate=InstanceControl.NewRootMutex(status.Channel.Root)) {
             try {
@@ -301,32 +333,32 @@ internal sealed class Supervisor {
                 catch(AbandonedMutexException) { acquired=true; }
                 if(!acquired) {
                     status.Message="Another helper is inspecting this Discord root.";
-                    return;
+                    return false;
                 }
-                if(!host.Snapshot(status.Channel).Quiet) return;
+                if(!host.Snapshot(status.Channel).Quiet) return false;
                 string reason;
                 ValidatedLoader loader=cache.Load(dist,out reason);
                 if(loader==null) {
                     status.Message=reason;
-                    return;
+                    return false;
                 }
                 Installation fresh=Installation.Inspect(status.Channel.Root,status.Channel.Executable,dist);
                 if(fresh.Generation!=generation.Key || (fresh.Kind!=InstallationKind.Stock && fresh.Kind!=InstallationKind.Interrupted)) {
                     status.Metadata=null;
-                    return;
+                    return false;
                 }
                 // Exit can alter native updater metadata. Require the observed tree to match.
                 if(status.Settling!=Installation.GetSettlingMetadataSignature(status.Channel.Root)) {
                     status.Settling=null;
                     status.Message="Files changed during exit; waiting for a new settled observation.";
-                    return;
+                    return false;
                 }
                 if(!charged) {
                     generation.Attempts++;
                     generation.LastAttempt=host.Now.Ticks;
-                    if(!store.Save()) return;
+                    if(!store.Save()) return false;
                 }
-                if(!CanWork()) return;
+                if(!CanWork()) return false;
                 RepairResult result;
                 transactionActive=true;
                 try {
@@ -339,7 +371,8 @@ internal sealed class Supervisor {
                 }
                 status.Message=result.Success?"Repaired: loader and original verified.":"Repair failed safely: "+result.Reason;
                 status.Metadata=null;
-                if(!result.Success) host.Notify(status.Message);
+                if(!result.Success) host.Notify(status.Message,false);
+                return result.Success;
             } finally {
                 if(acquired) gate.ReleaseMutex();
             }

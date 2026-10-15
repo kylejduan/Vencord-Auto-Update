@@ -44,7 +44,9 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
     public void Countdown(string channel,Func<bool> valid,Action<bool> finished) {
         dialog=new RestartDialog(channel,valid,accepted=>{dialog=null;finished(accepted);Refresh();Post(Pulse);});dialog.Show();
     }
-    public void Notify(string message) {log.Write("SupervisorNotification");Refresh();}
+    // Failures after a visible restart open Status, which shows each channel's message and keeps
+    // this host until the user closes it. Synchronous, so the batch cannot finish first.
+    public void Notify(string message,bool failure) {log.Write(failure?"SupervisorFailureShown":"SupervisorNotification");if(failure && !exiting)ShowStatus();else Refresh();}
     void Post(Action action) {
         try {if(!dispatch.IsDisposed)dispatch.BeginInvoke(action);}
         catch(InvalidOperationException) { }
@@ -105,8 +107,8 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
         try {using(Process p=Process.Start(new ProcessStartInfo(target){UseShellExecute=true})) {}}
         catch(Exception e){MessageBox.Show("Could not open the requested resource: "+e.GetType().Name,"Vencord Auto Update");}
     }
-    void OpenLogs(){try{Directory.CreateDirectory(log.DirectoryPath);Open(log.DirectoryPath);}catch(IOException){Notify("Cannot open logs.");}}
-    void About(){MessageBox.Show("Vencord Auto Update 0.1.0\r\nIndependent community helper, licensed under GNU GPL version 3.\r\nNo telemetry or automatic downloads. File verification does not prove runtime injection.\r\nSee LICENSE in the release or source checkout.","About Vencord Auto Update");}
+    void OpenLogs(){try{Directory.CreateDirectory(log.DirectoryPath);Open(log.DirectoryPath);}catch(IOException){Notify("Cannot open logs.",false);}}
+    void About(){MessageBox.Show("Vencord Auto Update 0.1.1\r\nIndependent community helper, licensed under GNU GPL version 3.\r\nNo telemetry or automatic downloads. File verification does not prove runtime injection.\r\nSee LICENSE in the release or source checkout.","About Vencord Auto Update");}
     void Setup(string name) {
         if(paths.Portable){MessageBox.Show("Portable fixture mode does not activate installation. Use the setup scripts explicitly with their documented test options.","Portable mode");return;}
         try {

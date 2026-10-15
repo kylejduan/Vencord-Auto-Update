@@ -30,21 +30,26 @@ internal sealed class Installation {
     internal static string GetSettlingMetadataSignature(string root) { return MetadataTree(root,null); }
     static string MetadataTree(string root, string ignoreArchivesIn) {
         root = SafePath.Local(root); List<string> records = new List<string>();
-        WalkMetadata(root,ignoreArchivesIn,records,0); records.Sort(StringComparer.Ordinal);
+        if (!Directory.Exists(root)) records.Add(root + "|missing");
+        else WalkMetadata(new DirectoryInfo(root),ignoreArchivesIn,records,0);
+        records.Sort(StringComparer.Ordinal);
         return SafePath.TextHash(String.Join("\n",records));
     }
-    static void WalkMetadata(string directory, string ignoreArchivesIn, List<string> records, int depth) {
-        SafePath.Local(directory);
+    // The root and its ancestors are validated once. Each enumerated child is checked from its
+    // own find data, so one walk costs one directory enumeration instead of per-entry ancestor
+    // and attribute queries. Record formats match SafePath.Metadata.
+    static void WalkMetadata(DirectoryInfo directory, string ignoreArchivesIn, List<string> records, int depth) {
         if (depth > 64 || records.Count > 100000) throw new IOException("Installation metadata scan exceeds supported bounds.");
-        if (!Directory.Exists(directory)) { records.Add(directory + "|missing"); return; }
-        records.Add(directory + "|directory");
-        foreach (string path in Directory.GetFileSystemEntries(directory)) {
-            SafePath.Local(path); string name = Path.GetFileName(path);
-            bool resources = Path.GetFileName(directory) == "resources";
+        records.Add(directory.FullName + "|directory");
+        bool resources = directory.Name == "resources", archives = SafePath.Same(directory.FullName,ignoreArchivesIn);
+        foreach (FileSystemInfo item in directory.EnumerateFileSystemInfos()) {
+            if ((item.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Reparse points are unsupported: " + item.FullName);
+            string name = item.Name;
             if (resources && (name == RepairTransaction.JournalName || (name.StartsWith(".vencord-auto-update.",StringComparison.Ordinal) && name.EndsWith(".loader.tmp",StringComparison.Ordinal)))) continue;
-            if (SafePath.Same(directory,ignoreArchivesIn) && (name == "app.asar" || name == "_app.asar")) continue;
-            if (Directory.Exists(path)) WalkMetadata(path,ignoreArchivesIn,records,depth+1);
-            else records.Add(SafePath.Metadata(path));
+            if (archives && (name == "app.asar" || name == "_app.asar")) continue;
+            DirectoryInfo child = item as DirectoryInfo;
+            if (child != null) WalkMetadata(child,ignoreArchivesIn,records,depth+1);
+            else records.Add(item.FullName + "|F|" + ((FileInfo)item).Length + "|" + item.LastWriteTimeUtc.Ticks + "|" + (int)item.Attributes);
         }
     }
     static string EnvironmentMetadata(string root,string resources,string dist) {

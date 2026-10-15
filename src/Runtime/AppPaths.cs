@@ -6,7 +6,17 @@ using System.Text;
 namespace VencordAutoUpdate {
 internal sealed class Channel {
     internal readonly string Root, Executable;
+    // Set when a discovered default root cannot be used safely. That channel alone is refused.
+    internal readonly string Refusal;
     internal Channel(string root,string executable) { Root=Canonical(root); Executable=executable; }
+    Channel(string root,string executable,string refusal) { Root=root; Executable=executable; Refusal=refusal; }
+    internal static Channel Discovered(string root,string executable) {
+        try { return new Channel(root,executable); }
+        catch(Exception e) {
+            if(!(e is IOException) && !(e is UnauthorizedAccessException) && !(e is ArgumentException) && !(e is NotSupportedException)) throw;
+            return new Channel(root,executable,"Unsupported Discord root; other channels continue: "+e.Message);
+        }
+    }
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetLongPathName(string path,StringBuilder buffer,uint length);
     internal static string Canonical(string path) {
         string value=SafePath.Local(path);
@@ -56,7 +66,7 @@ internal sealed class AppPaths {
         List<Channel> result=new List<Channel>();
         string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         foreach(string name in new [] { "Discord","DiscordPTB","DiscordCanary" }) {
-            string root=Path.Combine(local,name);if(Directory.Exists(root)) result.Add(ChannelFor(root));
+            string root=Path.Combine(local,name);if(Directory.Exists(root)) result.Add(Channel.Discovered(root,name+".exe"));
         }
         return result;
     }

@@ -18,7 +18,7 @@ try {
     foreach ($file in $r.Old.Files) { $path=Join-Path $paths.Destination $file.Name; Assert-SetupHash $path @($file.Sha256); Remove-Item -LiteralPath $path }
     Assert-SetupHash $paths.Manifest @($r.Record.OldManifestHash)
     Remove-Item -LiteralPath $paths.Manifest
-    Write-SetupDurable (Join-Path $paths.Recovery 'committed') (Get-SetupHash (Join-Path $paths.Recovery 'record.json'))
+    Publish-SetupDurable (Join-Path $paths.Recovery 'committed') (Get-SetupHash (Join-Path $paths.Recovery 'record.json'))
     Complete-SetupRecovery $paths
     if (@(Get-ChildItem -LiteralPath $paths.Destination -Force).Count -eq 0) { [IO.Directory]::Delete($paths.Destination) }
     Write-Output 'Removed only the owned machine service, shortcut and files. Every user cache/state/log/recovery file is preserved; Discord and Vencord were untouched. The protected setup lock directory remains for serialized future setup.'

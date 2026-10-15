@@ -26,6 +26,19 @@ internal static partial class ServiceTests {
                     GC.Collect();GC.WaitForPendingFinalizers();self.Refresh();Console.WriteLine("Nonprivileged fixture host 50-cycle handles: before="+before+" after="+self.HandleCount);Check(self.HandleCount<=before+8,"50-cycle bounded handles");
                 }
             }
+            string local=Path.Combine(fixture,"Local"),nested=Path.Combine(local,"Discord");Directory.CreateDirectory(nested);
+            using(var changed=new AutoResetEvent(false)) using(var ancestor=new AutoResetEvent(false))
+            using(var raw=new FileSystemWatcher(fixture){IncludeSubdirectories=false,NotifyFilter=NotifyFilters.LastWrite})
+            using(var watches=new RootNotifications(fixture,new[]{nested},delegate{changed.Set();})) {
+                raw.Changed+=delegate(object sender,FileSystemEventArgs e){if(String.Equals(e.FullPath,local,StringComparison.OrdinalIgnoreCase))ancestor.Set();};raw.EnableRaisingEvents=true;
+                Check(watches.Refresh(),"nested root subscribed");Thread.Sleep(200);while(changed.WaitOne(0)){}
+                string churn=Path.Combine(local,"unrelated.tmp");File.WriteAllText(churn,"x");File.Delete(churn);
+                Check(ancestor.WaitOne(5000),"fixture produces the ancestor timestamp notification");
+                Check(!changed.WaitOne(1500),"unrelated sibling churn under an ancestor stays idle");
+                string asar=Path.Combine(nested,"app.asar");File.WriteAllText(asar,"fixture");Check(changed.WaitOne(5000),"nested root change still notifies");
+                File.Delete(asar);Thread.Sleep(500);while(changed.WaitOne(0)){}
+                Directory.Delete(nested);Check(changed.WaitOne(5000),"empty nested root deletion notifies");
+            }
             string target=Path.Combine(fixture,"canary-target"),junction=Path.Combine(fixture,"DiscordCanary");Directory.CreateDirectory(target);Directory.CreateDirectory(root);
             using(var link=Process.Start(new ProcessStartInfo("cmd.exe","/c mklink /J \""+junction+"\" \""+target+"\""){UseShellExecute=false,CreateNoWindow=true})){link.WaitForExit();Check(link.ExitCode==0,"fixture junction root");}
             try {

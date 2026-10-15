@@ -11,8 +11,18 @@ internal sealed class RootNotifications:IDisposable {
     internal RootNotifications(string profile,string[] roots,Action signal){this.profile=profile;this.roots=roots;this.signal=signal;}
     internal long Events {get{return Interlocked.Read(ref events);}}
     void Changed(object sender,FileSystemEventArgs e) {
-        foreach(string root in roots)if(TrustedPaths.IsUnder(e.FullPath,root) || TrustedPaths.IsUnder(root,e.FullPath)){Interlocked.Increment(ref events);signal();return;}
-        RenamedEventArgs renamed=e as RenamedEventArgs;if(renamed!=null)foreach(string root in roots)if(TrustedPaths.IsUnder(renamed.OldFullPath,root) || TrustedPaths.IsUnder(root,renamed.OldFullPath)){Interlocked.Increment(ref events);signal();return;}
+        RenamedEventArgs renamed=e as RenamedEventArgs;
+        if(Relevant(e.FullPath,e.ChangeType) || (renamed!=null && Relevant(renamed.OldFullPath,e.ChangeType))){Interlocked.Increment(ref events);signal();}
+    }
+    // Anything at or inside a root matters. An ancestor matters only when it is created, deleted or
+    // renamed: its timestamp changes whenever unrelated siblings (other apps' files in LocalAppData,
+    // AppData or the profile) are added or removed, which must not wake the worker.
+    bool Relevant(string path,WatcherChangeTypes type) {
+        foreach(string root in roots) {
+            if(TrustedPaths.IsUnder(path,root))return true;
+            if(type!=WatcherChangeTypes.Changed && TrustedPaths.IsUnder(root,path))return true;
+        }
+        return false;
     }
     void Error(object sender,ErrorEventArgs e){Interlocked.Increment(ref events);signal();}
     // Returns false when an eligible directory could not be subscribed; the caller retries later.

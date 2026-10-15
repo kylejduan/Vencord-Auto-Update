@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+Healthy idle no longer wakes the worker for unrelated activity. The service watches the folders above each Discord and Vencord root so it can see a root appear or disappear, but it also treated every timestamp change on those folders as relevant. Other apps adding or removing files directly in LocalAppData, AppData or the profile therefore launched a worker (at most one per ten seconds). Ancestor folders now count only when they are created, deleted or renamed. Found on a real installation, where an unrelated burst caused eleven idle worker runs in two minutes.
+
 ## 0.1.2
 
 Setup and the service now name the exact file or folder when they refuse an ownership or permission check, with the action to take. A real installation was refused because extra user grants on the all-users Start Menu folder made the shortcut location user-deletable, and the old message did not say where.

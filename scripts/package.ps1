@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory,
-    [string]$Version = '0.1.2',
+    [string]$Version = '0.1.3',
     [switch]$RequireClean,
     [switch]$RequireTag
 )

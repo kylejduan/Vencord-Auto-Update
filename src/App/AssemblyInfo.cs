@@ -3,5 +3,5 @@ using System.Reflection;
 [assembly:AssemblyDescription("Normal-user offline Vencord loader recovery helper")]
 [assembly:AssemblyProduct("Vencord Auto Update")]
 [assembly:AssemblyCopyright("GPL-3.0")]
-[assembly:AssemblyVersion("0.1.3.0")]
-[assembly:AssemblyFileVersion("0.1.3.0")]
+[assembly:AssemblyVersion("0.1.4.0")]
+[assembly:AssemblyFileVersion("0.1.4.0")]

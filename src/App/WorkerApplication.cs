@@ -23,6 +23,7 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
     StatusForm form;
     RestartDialog dialog;
     bool locked,exiting,manual,awaitingWork;
+    string consentCancel;
     internal int ExitCode {get;private set;}
     internal WorkerApplication(AppPaths config,InstanceControl control) {
         awaitingWork=config.Command=="--worker-host";
@@ -42,7 +43,15 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
     public bool Stop(Channel channel,ProcessSnapshot cohort) {log.Write("CapturedProcessStopRequested");return inspector.Stop(channel,cohort);}
     public bool Launch(Channel channel) {log.Write("LauncherRequested");return inspector.Launch(channel);}
     public void Countdown(string channel,Func<bool> valid,Action<bool> finished) {
-        dialog=new RestartDialog(channel,valid,accepted=>{dialog=null;finished(accepted);Refresh();Post(Pulse);});dialog.Show();
+        // Log why consent ended with fixed categories: accepted, declined by the user, invalidated by a
+        // failed check, or cancelled by this host (shutdown, work budget, scan error).
+        bool invalidated=false;consentCancel=null;log.Write("CountdownShown");
+        dialog=new RestartDialog(channel,()=>{bool ok=valid();if(!ok)invalidated=true;return ok;},accepted=>{
+            dialog=null;log.Write(accepted?"CountdownAccepted":invalidated?"CountdownInvalidated:"+supervisor.LastInvalid:consentCancel!=null?"CountdownCancelled:"+consentCancel:"CountdownDeclined");
+            finished(accepted);
+            if(accepted && supervisor.LastInvalid!=null)log.Write("RestartCancelled:"+supervisor.LastInvalid);
+            Refresh();Post(Pulse);
+        });dialog.Show();
     }
     // Failures after a visible restart open Status, which shows each channel's message and keeps
     // this host until the user closes it. Synchronous, so the batch cannot finish first.
@@ -70,11 +79,11 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
         if(awaitingWork){if(elapsed.Elapsed>=TimeSpan.FromSeconds(5))Finish(WorkerResult.Retry);return;}
         try {
             batch.Step(elapsed.Elapsed);
-            if(supervisor.Stopping)CancelConsent();
+            if(supervisor.Stopping)CancelConsent("WorkStopped");
             Refresh();
             if(batch.Result.HasValue)Finish(batch.Result.Value);
         }catch(Exception e) {
-            log.Write("ScanError:"+e.GetType().Name);batch.Abort();CancelConsent();
+            log.Write("ScanError:"+e.GetType().Name);batch.Abort();CancelConsent("ScanError");
             batch.Step(elapsed.Elapsed);
             if(batch.Result.HasValue)Finish(batch.Result.Value);
         }
@@ -108,7 +117,7 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
         catch(Exception e){MessageBox.Show("Could not open the requested resource: "+e.GetType().Name,"Vencord Auto Update");}
     }
     void OpenLogs(){try{Directory.CreateDirectory(log.DirectoryPath);Open(log.DirectoryPath);}catch(IOException){Notify("Cannot open logs.",false);}}
-    void About(){MessageBox.Show("Vencord Auto Update 0.1.3\r\nIndependent community helper, licensed under GNU GPL version 3.\r\nNo telemetry or automatic downloads. File verification does not prove runtime injection.\r\nSee LICENSE in the release or source checkout.","About Vencord Auto Update");}
+    void About(){MessageBox.Show("Vencord Auto Update 0.1.4\r\nIndependent community helper, licensed under GNU GPL version 3.\r\nNo telemetry or automatic downloads. File verification does not prove runtime injection.\r\nSee LICENSE in the release or source checkout.","About Vencord Auto Update");}
     void Setup(string name) {
         if(paths.Portable){MessageBox.Show("Portable fixture mode does not activate installation. Use the setup scripts explicitly with their documented test options.","Portable mode");return;}
         try {
@@ -133,9 +142,9 @@ internal sealed class WorkerApplication : ApplicationContext,ISupervisorHost {
         Post(()=>{if(batch.Running){supervisor.Rescan();Pulse();}});
     }
     void PowerChanged(object sender,PowerModeChangedEventArgs e) {if(e.Mode==PowerModes.Resume)Post(()=>{if(batch.Running){supervisor.Rescan();Pulse();}});}
-    void CancelConsent() {if(dialog!=null)dialog.Close();if(form!=null)form.CancelConfirmation();}
+    void CancelConsent(string why) {if(dialog!=null){consentCancel=why;dialog.Close();}if(form!=null)form.CancelConfirmation();}
     void RequestExit() {
-        exiting=true;supervisor.Shutdown();CancelConsent();
+        exiting=true;supervisor.Shutdown();CancelConsent("HostExiting");
         if(supervisor.Busy) {timer.Start();return;}
         timer.Stop();
         foreach(var reply in replies)reply(WorkerResult.Retry);replies.Clear();

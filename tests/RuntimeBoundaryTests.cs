@@ -10,6 +10,19 @@ internal static class RuntimeBoundaryTests {
             f.Write("app.asar",f.Loader(""));f.Write("_app.asar",Fixtures.Stock("old"));new LoaderCache(Path.Combine(f.Cache,"cache")).Capture(f.Inspect());File.Delete(Path.Combine(f.Resources,"_app.asar"));f.Write("app.asar",Fixtures.Stock("new"));
             var host=new FakeHost();host.Running(f.Root,7,1);var engine=SupervisorTests.Make(f,host);engine.Tick();host.Time=host.Time.AddSeconds(10);engine.Tick();host.Finish(true);
             TestRunner.Assert(f.Inspect().Kind==InstallationKind.Healthy && host.Stops==1 && host.Launches==1,"restart transaction incomplete");var state=new StateStore(f.Cache).Find(f.Inspect().Generation);TestRunner.Assert(state.Attempts==1 && state.Reserved,"restart allowance not persisted");
+            TestRunner.Assert(host.Failures==0,"successful restart was reported as a failure");
+        }});
+        TestRunner.Run("failed reopen after a visible restart is shown to the user",delegate {using(var f=new Fixtures()) {
+            f.Write("app.asar",f.Loader(""));f.Write("_app.asar",Fixtures.Stock("old"));new LoaderCache(Path.Combine(f.Cache,"cache")).Capture(f.Inspect());File.Delete(Path.Combine(f.Resources,"_app.asar"));f.Write("app.asar",Fixtures.Stock("new"));
+            var host=new FakeHost();host.LaunchResult=false;host.Running(f.Root,7,1);var engine=SupervisorTests.Make(f,host);engine.Tick();host.Time=host.Time.AddSeconds(10);engine.Tick();host.Finish(true);
+            TestRunner.Assert(host.Launches==1 && host.Failures==1 && engine.Channels[0].Message.Contains("could not be reopened"),"failed reopen was not surfaced");
+            host.Time=host.Time.AddSeconds(31);engine.Tick();
+            TestRunner.Assert(engine.Channels[0].Failure!=null && engine.Channels[0].Failure.Contains("could not be reopened"),"later poll erased the restart problem");
+        }});
+        TestRunner.Run("failed stop after a visible countdown is shown to the user",delegate {using(var f=new Fixtures()) {
+            f.Write("app.asar",f.Loader(""));f.Write("_app.asar",Fixtures.Stock("old"));new LoaderCache(Path.Combine(f.Cache,"cache")).Capture(f.Inspect());File.Delete(Path.Combine(f.Resources,"_app.asar"));f.Write("app.asar",Fixtures.Stock("new"));
+            var host=new FakeHost();host.StopResult=false;host.Running(f.Root,7,1);var engine=SupervisorTests.Make(f,host);engine.Tick();host.Time=host.Time.AddSeconds(10);engine.Tick();host.Finish(true);
+            TestRunner.Assert(host.Stops==1 && host.Failures==1 && f.Inspect().Kind==InstallationKind.Stock,"failed stop was not surfaced");
         }});
         TestRunner.Run("final live process guard retains original during transaction",delegate {using(var f=new Fixtures()) {
             f.Write("app.asar",f.Loader(""));f.Write("_app.asar",Fixtures.Stock("old"));new LoaderCache(Path.Combine(f.Cache,"cache")).Capture(f.Inspect());File.Delete(Path.Combine(f.Resources,"_app.asar"));f.Write("app.asar",Fixtures.Stock("new"));string hash=f.Inspect().OriginalHash;

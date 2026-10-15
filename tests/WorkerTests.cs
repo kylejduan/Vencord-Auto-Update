@@ -15,7 +15,7 @@ internal static class WorkerTests {
         public bool Stop(Channel channel,ProcessSnapshot cohort) {throw new Exception("Deferred cohort must not be stopped");}
         public bool Launch(Channel channel) {throw new Exception("Deferred cohort must not launch");}
         public void Countdown(string channel,Func<bool> valid,Action<bool> finished) {throw new Exception("Established cohort must not prompt");}
-        public void Notify(string message) {}
+        public void Notify(string message,bool failure) {}
     }
     internal static void Run() {
         TestRunner.Run("real deferred channel outcomes identify every known-root mask",delegate {

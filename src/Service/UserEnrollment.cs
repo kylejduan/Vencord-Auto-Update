@@ -4,7 +4,7 @@ namespace VencordAutoUpdate {
 internal sealed class UserEnrollment:IDisposable {
     readonly object gate=new object();readonly BrokerSchedule schedule;
     readonly RootNotifications notifications;readonly IWorkerLauncher launcher;readonly Action<string> report;readonly Action retiredDrained;
-    readonly ScheduledDispatch deadline;readonly Timer dispatch,watchdog,completionProbe;readonly ManualResetEvent drained=new ManualResetEvent(true);
+    readonly ScheduledDispatch deadline;readonly Timer dispatch,watchdog,completionProbe,resubscribe;int resubscribeAttempts;readonly ManualResetEvent drained=new ManualResetEvent(true);
     IWorkerProcess worker,stopWorker;DeferredProcessWaits processes;
     bool stopping,disposed,workerUnobserved,stopUnobserved;int queued;
     internal readonly UserSession User;
@@ -12,7 +12,7 @@ internal sealed class UserEnrollment:IDisposable {
     internal UserEnrollment(UserSession user,IWorkerLauncher launcher,Action<string> report,DateTime? previousLaunch,Action retiredDrained) {
         User=user;this.launcher=launcher;this.report=report;this.retiredDrained=retiredDrained;schedule=new BrokerSchedule(previousLaunch);
         notifications=new RootNotifications(user.Profile,user.Roots,Signal);
-        dispatch=new Timer(Dispatch,null,Timeout.Infinite,Timeout.Infinite);deadline=new ScheduledDispatch(schedule,delegate{return BrokerClock.Now;},delegate(int delay){dispatch.Change(delay,Timeout.Infinite);});watchdog=new Timer(Watchdog,null,Timeout.Infinite,Timeout.Infinite);completionProbe=new Timer(ProbeCompletion,null,Timeout.Infinite,Timeout.Infinite);
+        dispatch=new Timer(Dispatch,null,Timeout.Infinite,Timeout.Infinite);deadline=new ScheduledDispatch(schedule,delegate{return BrokerClock.Now;},delegate(int delay){dispatch.Change(delay,Timeout.Infinite);});watchdog=new Timer(Watchdog,null,Timeout.Infinite,Timeout.Infinite);completionProbe=new Timer(ProbeCompletion,null,Timeout.Infinite,Timeout.Infinite);resubscribe=new Timer(Resubscribe,null,Timeout.Infinite,Timeout.Infinite);
     }
     internal void Signal() {
         // Collapse concurrent native callbacks before entering the serialized scheduler.
@@ -27,7 +27,7 @@ internal sealed class UserEnrollment:IDisposable {
             if(stopping || !deadline.Take())return;
             try {
                 // Subscribe before starting a worker's snapshot. Failure retains bounded pending work.
-                notifications.Refresh();worker=launcher.Launch(User,false);drained.Reset();
+                Subscribed(notifications.Refresh());worker=launcher.Launch(User,false);drained.Reset();
                 IWorkerProcess launched=worker;worker.OnExit(delegate(int result){Completed(launched,result);});watchdog.Change(225000,Timeout.Infinite);
             }catch(Exception e) {
                 report("Worker dispatch failed for "+User.Sid+": "+e.Message);
@@ -36,6 +36,21 @@ internal sealed class UserEnrollment:IDisposable {
                 if(worker!=null){workerUnobserved=true;ArmCompletionProbe();watchdog.Change(225000,Timeout.Infinite);return;}
                 schedule.Complete(22,0,BrokerClock.Now);Arm();
             }
+        }
+    }
+    // A directory that could not be subscribed is retried at 1, 2 and 4 minutes. Success after a
+    // gap queues one reconciliation, because changes inside that directory were not observed.
+    void Subscribed(bool complete) {
+        if(complete){resubscribeAttempts=0;resubscribe.Change(Timeout.Infinite,Timeout.Infinite);return;}
+        if(resubscribeAttempts<3){resubscribe.Change(60000<<resubscribeAttempts,Timeout.Infinite);resubscribeAttempts++;}
+    }
+    void Resubscribe(object unused) {
+        lock(gate) {
+            if(stopping || disposed)return;
+            bool complete;
+            try{complete=notifications.Refresh();}catch(Exception e){report("Directory subscription retry failed for "+User.Sid+": "+e.Message);complete=false;}
+            if(complete){resubscribeAttempts=0;DropProcesses();schedule.Signal(BrokerClock.Now);Arm();}
+            else Subscribed(false);
         }
     }
     void Completed(IWorkerProcess process,int result) {
@@ -80,7 +95,7 @@ internal sealed class UserEnrollment:IDisposable {
     void ObserveWorkerExit(){int result;if(workerUnobserved && worker!=null && worker.TryGetExitCode(out result))Completed(worker,result);}
     void ObserveUnregisteredExits(){ObserveWorkerExit();int result;if(stopUnobserved && stopWorker!=null && stopWorker.TryGetExitCode(out result))StopCompleted(stopWorker,result);}
     void Watchdog(object unused){lock(gate){ObserveUnregisteredExits();if(worker==null)return;report("Worker exceeded 225 seconds for "+User.Sid+"; requesting orderly stop, never terminating its repair transaction.");RequestStop();}}
-    internal void StopDispatch(){lock(gate){if(stopping)return;stopping=true;schedule.Stop();dispatch.Change(Timeout.Infinite,Timeout.Infinite);watchdog.Change(Timeout.Infinite,Timeout.Infinite);notifications.Dispose();DropProcesses();RequestStop();}}
+    internal void StopDispatch(){lock(gate){if(stopping)return;stopping=true;schedule.Stop();dispatch.Change(Timeout.Infinite,Timeout.Infinite);resubscribe.Change(Timeout.Infinite,Timeout.Infinite);watchdog.Change(Timeout.Infinite,Timeout.Infinite);notifications.Dispose();DropProcesses();RequestStop();}}
     internal bool WaitForDrain(int milliseconds) {
         // Explicit shutdown waits can also observe owned handles promptly within
         // the caller budget; they are not required for retirement wakeups.
@@ -92,7 +107,7 @@ internal sealed class UserEnrollment:IDisposable {
         }while(true);
     }
     public void Dispose() {
-        StopDispatch();lock(gate){if(disposed)return;if(!drained.WaitOne(0))throw new InvalidOperationException("Owned worker remains active; binary replacement must be refused.");disposed=true;dispatch.Dispose();watchdog.Dispose();completionProbe.Dispose();drained.Dispose();}
+        StopDispatch();lock(gate){if(disposed)return;if(!drained.WaitOne(0))throw new InvalidOperationException("Owned worker remains active; binary replacement must be refused.");disposed=true;dispatch.Dispose();resubscribe.Dispose();watchdog.Dispose();completionProbe.Dispose();drained.Dispose();}
     }
 }
 }

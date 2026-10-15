@@ -24,7 +24,7 @@ internal static class Program {
                 ConsoleReady();
                 foreach(var channel in paths.Channels()) {
                     var value=Installation.Inspect(channel.Root,channel.Executable,paths.Dist);
-                    Console.WriteLine(channel.Executable+": "+value.Kind+" — "+value.Reason);
+                    Console.WriteLine(channel.Executable+": "+value.Kind+": "+value.Reason);
                 }
                 return 0;
             }

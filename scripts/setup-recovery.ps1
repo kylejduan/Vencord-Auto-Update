@@ -90,7 +90,7 @@ function Read-SetupRecovery($Paths) {
     $shortcut=Assert-SetupShortcut $Paths
     if ($shortcut) { Assert-SetupHash $Paths.ShortcutPath @($record.OldShortcutHash,$record.NewShortcutHash) }
     Assert-NoSetupTask $Paths
-    $service=Assert-SetupService $Paths
+    $service=Assert-SetupService $Paths -AllowPartial:(-not $allowed.ContainsKey('committed'))
     return @{ Record=$record; Old=$sets.old; New=$sets.new; Inventory=$inventory; Service=$service; Committed=$allowed.ContainsKey('committed') }
 }
 function Complete-SetupRecovery($Paths) {
@@ -108,6 +108,8 @@ function Restore-SetupRecovery($Paths) {
     $r=Read-SetupRecovery $Paths
     if (-not $r) { return }
     if ($r.Committed) { Complete-SetupRecovery $Paths; return }
+    # A service whose creation was interrupted was never started; remove it and recreate below if owned.
+    if ($r.Service -and $r.Service.Partial) { Remove-SetupPartialService $Paths }
     Stop-SetupService $Paths; Wait-SetupExecutables $Paths
     $r=Read-SetupRecovery $Paths
     if (-not $r.Record.HadService -and $r.Service) { Remove-SetupService $Paths }

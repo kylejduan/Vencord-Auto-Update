@@ -6,7 +6,7 @@ Install Vencord once with the [official installer](https://vencord.dev/download/
 
 ## Install and use
 
-Download `VencordAutoUpdate-0.1.0-windows.zip` and `SHA256SUMS` from the [release page](https://github.com/kylejduan/Vencord-Auto-Update/releases). Verify the ZIP's SHA-256, extract the entire ZIP, and open `VencordAutoUpdate.exe` normally. Choose **Install** and approve Windows UAC. The status window exits after setup starts. Setup copies both executables and the complete setup modules into native `%ProgramFiles%\VencordAutoUpdate`, registers and starts the automatic **VencordAutoUpdate** Windows service, and creates the common Start menu **Vencord Auto Update** shortcut. Command-line setup requires an administrator PowerShell running the extracted `install.ps1`.
+Download `VencordAutoUpdate-0.1.1-windows.zip` and `SHA256SUMS` from the [release page](https://github.com/kylejduan/Vencord-Auto-Update/releases). Verify the ZIP's SHA-256, extract the entire ZIP, and open `VencordAutoUpdate.exe` normally. Choose **Install** and approve Windows UAC. The status window exits after setup starts. Setup copies both executables and the complete setup modules into native `%ProgramFiles%\VencordAutoUpdate`, registers and starts the automatic **VencordAutoUpdate** Windows service, and creates the common Start menu **Vencord Auto Update** shortcut. Command-line setup requires an administrator PowerShell running the extracted `install.ps1`.
 
 The LocalSystem service is a narrow broker: it receives directory/session notifications and waits for relevant process exits. Healthy idle has no recurring scan, hashing loop, WMI subscription, or resident tray. It launches only its fixed adjacent worker under the active unlocked user's ordinary, non-elevated Windows token. The worker alone reads user policy and repairs files. No password is stored. Elevated or service-identity worker/UI launches are refused.
 
@@ -18,7 +18,7 @@ Channels are classified independently. The helper caches a recognized local load
 
 An eligible recently started Discord session may show a visible **20-second restart countdown**, measured by elapsed time from when it opens. **Not now**, a locked desktop, disabled restarts, or an established session defers repair until full exit. Restart can interrupt calls or drafts. Automatic restarts are limited to one per generation and one globally per ten minutes; persisted attempt/cooldown limits survive service and worker restarts. Failed delayed verification prohibits more automatic restarts; a fresh confirmed manual repair still requires valid files.
 
-Reactive repair cannot guarantee a patched first frame or first launch after every update. A deferred session can remain stock until a repaired restart. File validation does not prove Vencord injected: after a real update, confirm its settings page in Discord. Future Discord/Vencord changes may require a helper release or the official installer.
+If a restart you saw does not end with verified files and a relaunched Discord, Status opens with the reason; close it when done. Reactive repair cannot guarantee a patched first frame or first launch after every update. A deferred session can remain stock until a repaired restart. File validation does not prove Vencord injected: after a real update, confirm its settings page in Discord. Future Discord/Vencord changes may require a helper release or the official installer.
 
 ## Update, recovery, and uninstall
 

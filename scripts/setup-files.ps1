@@ -28,6 +28,12 @@ function Write-SetupDurable([string]$Path, [string]$Text) {
     $stream=[VencordSetup.Paths]::CreateFile($Path)
     try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
 }
+# Publish a small marker by rename, so an interruption leaves either no marker or the complete one.
+function Publish-SetupDurable([string]$Path, [string]$Text) {
+    $temporary=Join-Path (Split-Path -Parent $Path) ('transfer-'+[Guid]::NewGuid().ToString('N'))
+    Write-SetupDurable $temporary $Text
+    [IO.File]::Move($temporary,$Path)
+}
 function Copy-SetupDurable([string]$Source, [string]$Target) {
     $inputStream=[IO.File]::OpenRead($Source)
     try { $outputStream=[VencordSetup.Paths]::CreateFile($Target)
@@ -48,7 +54,7 @@ function Get-SetupSources([string]$SourceDirectory) {
     }
     foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) {
         $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($sources[$name])
-        if ($version.FileVersion -ne '0.1.0.0') { throw "Unexpected $name version. Build both reviewed binaries before setup." }
+        if ($version.FileVersion -ne '0.1.1.0') { throw "Unexpected $name version. Build both reviewed binaries before setup." }
     }
     return $sources
 }

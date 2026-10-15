@@ -12,7 +12,7 @@ internal sealed class RestartDialog : Form {
     readonly Action<bool> finished;
     bool accepted,reported;
     internal RestartDialog(string channel,Func<bool> check,Action<bool> done) {
-        clock=()=>elapsed.Elapsed;valid=check;finished=done;Text="Discord restart — Vencord Auto Update";AccessibleName="Cancelable Discord restart";
+        clock=()=>elapsed.Elapsed;valid=check;finished=done;Text="Discord restart - Vencord Auto Update";AccessibleName="Cancelable Discord restart";
         ClientSize=new Size(490,185);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;StartPosition=FormStartPosition.CenterScreen;TopMost=true;
         text.SetBounds(20,18,450,100);text.AccessibleName="Restart warning and seconds remaining";Controls.Add(text);
         Button cancel=new Button {Text="Not now",AccessibleName="Defer repair until Discord exits",DialogResult=DialogResult.Cancel};cancel.SetBounds(345,132,120,32);Controls.Add(cancel);CancelButton=cancel;cancel.Click+=(s,e)=>Close();

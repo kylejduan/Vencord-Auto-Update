@@ -26,6 +26,23 @@ internal static partial class ServiceTests {
                     GC.Collect();GC.WaitForPendingFinalizers();self.Refresh();Console.WriteLine("Nonprivileged fixture host 50-cycle handles: before="+before+" after="+self.HandleCount);Check(self.HandleCount<=before+8,"50-cycle bounded handles");
                 }
             }
+            string target=Path.Combine(fixture,"canary-target"),junction=Path.Combine(fixture,"DiscordCanary");Directory.CreateDirectory(target);Directory.CreateDirectory(root);
+            using(var link=Process.Start(new ProcessStartInfo("cmd.exe","/c mklink /J \""+junction+"\" \""+target+"\""){UseShellExecute=false,CreateNoWindow=true})){link.WaitForExit();Check(link.ExitCode==0,"fixture junction root");}
+            try {
+                using(var changed=new AutoResetEvent(false)) using(var watches=new RootNotifications(fixture,new[]{root,junction,dist},delegate{changed.Set();})) {
+                    watches.Refresh();while(changed.WaitOne(0)){}
+                    File.WriteAllText(Path.Combine(root,"isolated.txt"),"fixture");Check(changed.WaitOne(5000),"unsupported sibling root leaves valid root subscribed");
+                }
+            } finally {Directory.Delete(junction);}
+            string denied=Path.Combine(fixture,"DiscordPTB");Directory.CreateDirectory(denied);
+            var rule=new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User,System.Security.AccessControl.FileSystemRights.ListDirectory,System.Security.AccessControl.AccessControlType.Deny);
+            var acl=Directory.GetAccessControl(denied);acl.AddAccessRule(rule);Directory.SetAccessControl(denied,acl);
+            try {
+                using(var changed=new AutoResetEvent(false)) using(var watches=new RootNotifications(fixture,new[]{root,denied,dist},delegate{changed.Set();})) {
+                    Check(!watches.Refresh(),"unsubscribable root is reported for retry");while(changed.WaitOne(0)){}
+                    File.WriteAllText(Path.Combine(root,"partial.txt"),"fixture");Check(changed.WaitOne(5000),"failed sibling subscription leaves valid root subscribed");
+                }
+            } finally {acl=Directory.GetAccessControl(denied);acl.RemoveAccessRule(rule);Directory.SetAccessControl(denied,acl);}
             Check(TrustedPaths.IsUnder(root,fixture) && !TrustedPaths.IsUnder(fixture+"-other",fixture),"path separator containment");
             bool refused=false;try{TrustedPaths.RequireLocal("\\\\server\\share");}catch(IOException){refused=true;}Check(refused,"network paths refused");
             refused=false;try{TrustedPaths.RequireProtectedBinary(typeof(ServiceTests).Assembly.Location);}catch(Exception e){refused=e is IOException || e is UnauthorizedAccessException;}Check(refused,"user writable/non ProgramFiles binary refused");

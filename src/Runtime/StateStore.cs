@@ -22,7 +22,7 @@ internal sealed class StateStore {
         try {
             SafePath.Local(path);
             if (File.Exists(path)) {
-                string json=new UTF8Encoding(false,true).GetString(SafePath.ReadBounded(path,1024*1024));
+                string json=new UTF8Encoding(false,true).GetString(SafePath.ReadBounded(path,MaximumBytes));
                 var shape=StrictJson.Parse(json) as Dictionary<string,object>;
                 if(shape==null || shape.Count!=5 || !shape.ContainsKey("Schema") || !shape.ContainsKey("Paused") || !shape.ContainsKey("Automatic") || !shape.ContainsKey("LastRestart") || !shape.ContainsKey("Generations")) throw new IOException("Incomplete state.");
                 RequireInteger(shape,"Schema");
@@ -61,7 +61,10 @@ internal sealed class StateStore {
         }
     }
     internal GenerationState Find(string key) { return Value.Generations.Find(g=>String.Equals(g.Key,key,StringComparison.OrdinalIgnoreCase)); }
-    internal bool Add(GenerationState state) {
+    internal const int MaximumBytes=1024*1024;
+    // At capacity, history for generations that can no longer recur is retired before refusing.
+    internal bool Add(GenerationState state,Func<GenerationState,bool> obsolete=null) {
+        if(Value.Generations.Count>=512 && obsolete!=null) Value.Generations.RemoveAll(g=>obsolete(g));
         if(Value.Generations.Count>=512) { Writable=false;Error="Generation history is full; automatic work is disabled. Preserve state for review.";return false; }
         Value.Generations.Add(state); return Save();
     }
@@ -70,12 +73,15 @@ internal sealed class StateStore {
         string temporary=Path.Combine(directory,"state."+Guid.NewGuid().ToString("N")+".tmp");
         try {
             Validate(Value); SafePath.Local(directory); Directory.CreateDirectory(directory);
-            SafePath.WriteNew(temporary,Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(Value)));
+            byte[] bytes=Encoding.UTF8.GetBytes(new JavaScriptSerializer() { MaxJsonLength=Int32.MaxValue }.Serialize(Value));
+            // Never persist a file the reader would refuse; the previous state stays authoritative.
+            if(bytes.Length>MaximumBytes) throw new IOException("State exceeds its supported size.");
+            SafePath.WriteNew(temporary,bytes);
             SafePath.Local(path);
             if(File.Exists(path)) File.Replace(temporary,path,null);
             else NativeFiles.MoveNew(temporary,path);
             return true;
-        } catch(Exception e) { Writable=false;Error="State cannot be saved; automatic work disabled. "+e.GetType().Name;return false; }
+        } catch(Exception e) { Writable=false;Error="State cannot be saved; automatic work disabled. "+e.GetType().Name+": "+e.Message;return false; }
     }
 }
 }

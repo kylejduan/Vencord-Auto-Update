@@ -26,6 +26,14 @@ internal static partial class ServiceTests {
                     GC.Collect();GC.WaitForPendingFinalizers();self.Refresh();Console.WriteLine("Nonprivileged fixture host 50-cycle handles: before="+before+" after="+self.HandleCount);Check(self.HandleCount<=before+8,"50-cycle bounded handles");
                 }
             }
+            string local=Path.Combine(fixture,"Local"),nested=Path.Combine(local,"Discord");Directory.CreateDirectory(nested);
+            using(var changed=new AutoResetEvent(false)) using(var watches=new RootNotifications(fixture,new[]{nested},delegate{changed.Set();})) {
+                Check(watches.Refresh(),"nested root subscribed");Thread.Sleep(200);while(changed.WaitOne(0)){}
+                string churn=Path.Combine(local,"unrelated.tmp");File.WriteAllText(churn,"x");File.Delete(churn);
+                Check(!changed.WaitOne(1500),"unrelated sibling churn under an ancestor stays idle");
+                File.WriteAllText(Path.Combine(nested,"app.asar"),"fixture");Check(changed.WaitOne(5000),"nested root change still notifies");
+                Directory.Delete(nested,true);Check(changed.WaitOne(5000),"nested root deletion notifies through its parent");
+            }
             string target=Path.Combine(fixture,"canary-target"),junction=Path.Combine(fixture,"DiscordCanary");Directory.CreateDirectory(target);Directory.CreateDirectory(root);
             using(var link=Process.Start(new ProcessStartInfo("cmd.exe","/c mklink /J \""+junction+"\" \""+target+"\""){UseShellExecute=false,CreateNoWindow=true})){link.WaitForExit();Check(link.ExitCode==0,"fixture junction root");}
             try {

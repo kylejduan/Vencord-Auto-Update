@@ -95,7 +95,7 @@ internal sealed class Supervisor {
     internal void Tick() {
         if(busy || stopping)return;busy=true;
         try {
-            if(pending!=null && !Valid(pending)) Cancel();
+            if(pending!=null && !Valid(pending)) {cancelledBecause=LastInvalid;Cancel();}
             foreach(var status in channels) {
                 if(!CanWork()) break;
                 try {Poll(status);}catch(Exception e) {status.Message="Inspection failed safely: "+e.GetType().Name;status.Metadata=null;status.Settling=null;status.Outcome=null;}
@@ -173,7 +173,7 @@ internal sealed class Supervisor {
         else if(decision==Decision.Countdown && pending==null) {
             generation.Reserved=true;store.Value.LastRestart=host.Now.Ticks;
             if(!store.Save()){status.Message=store.Error;status.Outcome=WorkerResult.Refused;return;}
-            var request=new PendingRestart {Status=status,State=generation,Processes=processes,Metadata=metadata,Settling=settling};pending=request;
+            var request=new PendingRestart {Status=status,State=generation,Processes=processes,Metadata=metadata,Settling=settling};pending=request;cancelledBecause=null;
             status.Message="Restart countdown: choose Not now to defer.";
             host.Countdown(channel.Executable,()=>Valid(request),accepted=>Complete(request,accepted));
         }
@@ -200,15 +200,28 @@ internal sealed class Supervisor {
         if(status.RefusalMetadata!=metadata) {status.RefusalMetadata=metadata;status.RefusalSince=host.Now;}
         if(host.Now-status.RefusalSince>=TimeSpan.FromSeconds(10)) status.Outcome=WorkerResult.Refused;
     }
-    bool Valid(PendingRestart request) {
+    // Fixed category for the most recent failed consent revalidation, for logs. Null when valid.
+    internal string LastInvalid {get;private set;}
+    string cancelledBecause;
+    bool Valid(PendingRestart request) {LastInvalid=Invalid(request);return LastInvalid==null;}
+    string Invalid(PendingRestart request) {
         try {
-            if(!CanWork() || pending!=request || store.Value.Paused || !store.Writable || !host.Interactive || (!request.Manual && !store.Value.Automatic))return false;
+            if(!CanWork()) return "Stopping";
+            if(pending!=request) return cancelledBecause!=null?"Cancelled:"+cancelledBecause:"Superseded";
+            if(store.Value.Paused) return "Paused";
+            if(!store.Writable) return "StateUnwritable";
+            if(!host.Interactive) return "SessionNotInteractive";
+            if(!request.Manual && !store.Value.Automatic) return "AutomaticDisabled";
             var p=host.Snapshot(request.Status.Channel);
-            string reason;var loader=cache.Load(dist,out reason);
-            return loader!=null && p.Known && !p.Updater && p.Cohort==request.Processes.Cohort &&
-                request.Metadata==Installation.GetMetadataSignature(request.Status.Channel.Root,request.Status.Channel.Executable,dist) &&
-                request.Settling==Installation.GetSettlingMetadataSignature(request.Status.Channel.Root);
-        }catch{return false;}
+            string reason;
+            if(cache.Load(dist,out reason)==null) return "LoaderUnavailable";
+            if(!p.Known) return "ProcessAccessUnknown";
+            if(p.Updater) return "UpdaterRunning";
+            if(p.Cohort!=request.Processes.Cohort) return "ProcessesChanged";
+            if(request.Metadata!=Installation.GetMetadataSignature(request.Status.Channel.Root,request.Status.Channel.Executable,dist)) return "InstallationChanged";
+            if(request.Settling!=Installation.GetSettlingMetadataSignature(request.Status.Channel.Root)) return "FilesChanged";
+            return null;
+        }catch(Exception e){return "CheckFailed:"+e.GetType().Name;}
     }
     internal bool ManualRepair(ChannelStatus status,Func<bool> confirm) {
         if(busy || stopping || pending!=null || !store.Writable || store.Value.Paused || !host.Interactive) return false;

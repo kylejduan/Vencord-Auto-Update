@@ -48,6 +48,10 @@ internal sealed class Installation {
             if (resources && (name == RepairTransaction.JournalName || (name.StartsWith(".vencord-auto-update.",StringComparison.Ordinal) && name.EndsWith(".loader.tmp",StringComparison.Ordinal)))) continue;
             if (archives && (name == "app.asar" || name == "_app.asar")) continue;
             DirectoryInfo child = item as DirectoryInfo;
+            // Discord appends to its own logs while running (for example the module updater's
+            // dispatch.log about 30 seconds after start). Logs cannot change what Discord loads,
+            // so they must not reset settling or invalidate restart consent.
+            if (child == null && name.EndsWith(".log",StringComparison.OrdinalIgnoreCase)) continue;
             if (child != null) WalkMetadata(child,ignoreArchivesIn,records,depth+1);
             else records.Add(item.FullName + "|F|" + ((FileInfo)item).Length + "|" + item.LastWriteTimeUtc.Ticks + "|" + (int)item.Attributes);
         }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4
+
+Fixes the automatic restart after a Discord update, verified end to end on a real Discord Stable install with a simulated host update.
+
+- The restart countdown identifies a Discord session by its main process only. Discord's child processes (GPU, renderer, utility, crash handler) start and exit throughout a session; previously the first such change after an update restart deferred the generation, so the countdown rarely appeared. Stopping a session still ends every Discord process under the root that existed when termination began, and never chases a session started afterwards.
+- Discord's own log files (for example the module updater's dispatch.log, written about 30 seconds after start) no longer count as installation changes. Previously they reset settling and cancelled a countdown already on screen.
+- The helper log records why a countdown ended with fixed categories: accepted, declined, or invalidated with the failed check (for example FilesChanged or ProcessesChanged).
+- The setup UI test no longer loads an executable from bytes or decodes an encoded command, which antivirus products quarantine.
+
 ## 0.1.3
 
 Healthy idle no longer wakes the worker for unrelated activity. The service watches the folders above each Discord and Vencord root so it can see a root appear or disappear, but it also treated every timestamp change on those folders as relevant. Other apps adding or removing files directly in LocalAppData, AppData or the profile therefore launched a worker (at most one per ten seconds). Ancestor folders now count only when they are created, deleted or renamed. Found on a real installation, where an unrelated burst caused eleven idle worker runs in two minutes.

@@ -173,6 +173,15 @@ internal static class BoundaryTests {
             RepairResult result = RepairTransaction.Repair(f.Inspect(),loader,delegate { return true; },null);
             TestRunner.Assert(!result.Success && File.ReadAllText(path) == text && !File.Exists(Path.Combine(f.Resources,"app.asar")),"foreign journal authorized recovery");
         } });
+        TestRunner.Run("settling ignores Discord log appends but not installation files", delegate { using (Fixtures f = new Fixtures()) {
+            string modules = Path.Combine(f.Root,"app-1.0.10","modules","discord_dispatch-1","discord_dispatch"); Directory.CreateDirectory(modules);
+            string log = Path.Combine(modules,"dispatch.log"); File.WriteAllText(log,"start");
+            string before = Installation.GetSettlingMetadataSignature(f.Root);
+            File.AppendAllText(log,"\nmodule check"); File.WriteAllText(Path.Combine(f.Root,"SquirrelSetup.log"),"launch");
+            TestRunner.Assert(Installation.GetSettlingMetadataSignature(f.Root) == before,"log append changed settling");
+            File.WriteAllText(Path.Combine(modules,"index.js"),"module update");
+            TestRunner.Assert(Installation.GetSettlingMetadataSignature(f.Root) != before,"module file change ignored");
+        } });
         TestRunner.Run("pending metadata notices modules and same-size writes", delegate { using (Fixtures f = new Fixtures()) {
             f.Write("app.asar",Fixtures.Stock("one")); string before = Installation.GetSettlingMetadataSignature(f.Root);
             string module = Path.Combine(f.Root,"app-1.0.10","modules","native.node"); Directory.CreateDirectory(Path.GetDirectoryName(module)); File.WriteAllText(module,"one");

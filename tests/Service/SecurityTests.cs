@@ -19,7 +19,7 @@ internal static partial class ServiceTests {
         }
         string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);refused=false;try{TrustedPaths.WithinProfile(local,Path.GetDirectoryName(local));}catch(IOException){refused=true;}Check(refused,"known folder escape refused");
         foreach(var assembly in typeof(BrokerService).Assembly.GetReferencedAssemblies())Check(assembly.Name!="System.Windows.Forms","service has no WinForms dependency");
-        Check(typeof(BrokerService).Assembly.GetName().Version.ToString()=="0.1.1.0","service version matches release");
+        Check(typeof(BrokerService).Assembly.GetName().Version.ToString()=="0.1.2.0","service version matches release");
         DateTime now=DateTime.UtcNow;var schedule=new BrokerSchedule(now);schedule.Signal(now.AddSeconds(1));Check(!schedule.Take(now.AddSeconds(9)) && schedule.Take(now.AddSeconds(10)),"session replacement preserves per SID rate cap");
     }
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+Setup and the service now name the exact file or folder when they refuse an ownership or permission check, with the action to take. A real installation was refused because extra user grants on the all-users Start Menu folder made the shortcut location user-deletable, and the old message did not say where.
+
 ## 0.1.1
 
 Reliability and performance release.

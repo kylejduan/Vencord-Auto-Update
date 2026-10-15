@@ -7,14 +7,14 @@ $unpack=Join-Path $fixture 'artifacts'
 $machine=$null
 try {
     & (Join-Path $repo 'scripts/package.ps1') -OutputDirectory $fixture
-    $zip=Join-Path $fixture 'VencordAutoUpdate-0.1.1-windows.zip'
+    $zip=Join-Path $fixture 'VencordAutoUpdate-0.1.2-windows.zip'
     $checksum=(Get-Content -LiteralPath (Join-Path $fixture 'SHA256SUMS') -Raw).Trim()
-    Check ($checksum -ceq ((Get-SetupHash $zip).ToLowerInvariant()+'  VencordAutoUpdate-0.1.1-windows.zip')) 'ZIP checksum matches actual bytes'
+    Check ($checksum -ceq ((Get-SetupHash $zip).ToLowerInvariant()+'  VencordAutoUpdate-0.1.2-windows.zip')) 'ZIP checksum matches actual bytes'
     Expand-Archive -LiteralPath $zip -DestinationPath $unpack
     $expected=@(Get-OwnedFileNames)+'SOURCE.txt'
     $actual=@(Get-ChildItem -LiteralPath $unpack -Recurse -File | ForEach-Object { $_.FullName.Substring($unpack.Length+1) })
     Check (-not (Compare-Object ($expected | Sort-Object) ($actual | Sort-Object))) 'ZIP has exact two EXEs/setup modules/docs/provenance inventory and no test or user data'
-    foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) { Check ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $unpack $name)).FileVersion -eq '0.1.1.0') "ZIP $name version" }
+    foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) { Check ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $unpack $name)).FileVersion -eq '0.1.2.0') "ZIP $name version" }
     $source=Get-Content (Join-Path $unpack 'SOURCE.txt') -Raw
     Check ($source -match '^Version: 0\.1\.1\r?\nCommit: [0-9a-f]{40}\r?\nDirty: (true|false)\r?\n$') 'SOURCE exact version/commit/dirty provenance without machine paths'
     # Read-only packaged CLI is permitted elevated and never opens a setup UI.

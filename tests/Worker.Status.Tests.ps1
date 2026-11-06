@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $flags=[Reflection.BindingFlags]'NonPublic,Instance';$static=[Reflection.BindingFlags]'NonPublic,Static'
 if(-not $assembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary',$static).GetValue($null,$null)){Write-Output 'SKIP ordinary-token Status ordering fixture';exit 0}
 $type=$assembly.GetType('VencordAutoUpdate.Fixtures',$true)
@@ -32,8 +32,9 @@ foreach($scenario in @('Done','Deferred','simultaneous startup')) {
   }
   [IO.File]::Delete((Join-Path $resources '_app.asar'));[IO.File]::WriteAllBytes((Join-Path $resources 'app.asar'),$stock)
   $worker=Start-Owned $exe @('--worker','--data-dir',$data,'--discord-root',$root)
-  if($scenario -ne 'simultaneous startup'){Start-Sleep -Seconds 2}
-  if($worker.HasExited){throw 'Worker must be active during Status request'}
+  if($scenario -eq 'Done'){Start-Sleep -Seconds 2}
+  # A deferred worker can now finish immediately; Status must survive either side of that race.
+  if($scenario -ne 'Deferred' -and $worker.HasExited){throw 'Repair worker must be active during Status request'}
   $show=Start-Owned $exe @('--data-dir',$data,'--discord-root',$root)
   $timer=[Diagnostics.Stopwatch]::StartNew();$ui=$null
   do {

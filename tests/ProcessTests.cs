@@ -5,6 +5,13 @@ using System.Threading;
 namespace VencordAutoUpdate {
 internal static class ProcessTests {
     internal static void Run() {
+        TestRunner.Run("session ownership keeps own and unidentified users conservative",delegate {
+            using(var identity=System.Security.Principal.WindowsIdentity.GetCurrent())using(var current=Process.GetCurrentProcess()) {
+                TestRunner.Assert(!ProcessInspector.KnownOtherUser(current.SessionId,identity.User.Value),"own session excluded");
+                TestRunner.Assert(!ProcessInspector.KnownOtherUser(Int32.MaxValue,identity.User.Value),"unidentified session excluded");
+                if(SessionState.Interactive)TestRunner.Assert(ProcessInspector.KnownOtherUser(current.SessionId,"S-1-0-0"),"interactive session account was not resolved from WTS");
+            }
+        });
         TestRunner.Run("owned old-version process blocks only exact root",delegate {
             using(var f=new Fixtures()) {
                 string old=Path.Combine(f.Root,"app-1.0.9");Directory.CreateDirectory(old);
@@ -18,6 +25,8 @@ internal static class ProcessTests {
                         TestRunner.Assert(inspector.Snapshot(new Channel(other,"Discord.exe")).Quiet,"prefix root leaked");
                         var captured=snapshot.Discord.Find(x=>x.Pid==p.Id);
                         TestRunner.Assert(captured.StartTicks==p.StartTime.ToUniversalTime().Ticks,"start identity missing");
+                        var anotherSession=new ProcessInspector(id=>id==p.SessionId).Snapshot(new Channel(f.Root,"Discord.exe"));
+                        TestRunner.Assert(anotherSession.Known && anotherSession.Quiet,"another session's Discord blocked this session");
                     } finally {if(!p.HasExited)p.Kill();p.WaitForExit();}
                     TestRunner.Assert(p.HasExited,"fixture process not cleaned");
                 }
@@ -26,7 +35,8 @@ internal static class ProcessTests {
         TestRunner.Run("updater under fixture root blocks quiet snapshot",delegate {using(var f=new Fixtures()) {
             string exe=Path.Combine(f.Root,"Update.exe");File.Copy(typeof(TestRunner).Assembly.Location,exe,true);
             using(Process p=Process.Start(new ProcessStartInfo(exe,"--fixture-wait"){UseShellExecute=false,CreateNoWindow=true})) {
-                try {Thread.Sleep(300);var snapshot=new ProcessInspector().Snapshot(new Channel(f.Root,"Discord.exe"));TestRunner.Assert(snapshot.Known && snapshot.Updater && !snapshot.Quiet,"updater invisible");}
+                try {Thread.Sleep(300);var snapshot=new ProcessInspector().Snapshot(new Channel(f.Root,"Discord.exe"));TestRunner.Assert(snapshot.Known && snapshot.Updater && !snapshot.Quiet,"updater invisible");
+                    TestRunner.Assert(new ProcessInspector(id=>id==p.SessionId).Snapshot(new Channel(f.Root,"Discord.exe")).Quiet,"another user's updater blocked this session");}
                 finally {if(!p.HasExited)p.Kill();p.WaitForExit();}
                 TestRunner.Assert(p.HasExited,"updater fixture not cleaned");
             }

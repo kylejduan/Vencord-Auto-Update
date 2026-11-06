@@ -15,6 +15,16 @@ internal static class PolicyTests {
         TestRunner.Run("restart global ten minute cap",delegate { var s=Fresh(1,true);TestRunner.Assert(Eval(s,10,true,true,Now.AddSeconds(-589).Ticks)==Decision.Deferred,"global cap ignored");TestRunner.Assert(Eval(s,10,true,true,Now.AddSeconds(-590).Ticks)==Decision.Countdown,"cap never expires"); });
         TestRunner.Run("attempts bounded with sixty second retry",delegate {var s=Fresh(1,true);s.Attempts=1;s.LastAttempt=Now.Ticks;TestRunner.Assert(Eval(s,59,false,true,0)==Decision.Wait,"early retry");TestRunner.Assert(Eval(s,60,false,true,0)==Decision.Repair,"retry unavailable");s.Attempts=3;TestRunner.Assert(Eval(s,120,false,true,0)==Decision.Exhausted,"unbounded retries");});
         TestRunner.Run("changed cohort cannot inherit consent",delegate { var s=Fresh(1,true);TestRunner.Assert(RestartPolicy.Evaluate(s,Now.AddSeconds(10),Now,true,"fresh-pid",true,true,0)==Decision.Deferred,"fresh process inherited eligibility");});
+        TestRunner.Run("deferred running sessions finish before settling but full exit still settles",delegate {
+            var s=Fresh(181,true);
+            TestRunner.Assert(Eval(s,0,true,true,0)==Decision.Deferred,"old running session spent a settling batch");
+            TestRunner.Assert(Eval(s,0,false,true,0)==Decision.Wait,"full exit bypassed settling");
+            TestRunner.Assert(Eval(s,10,false,true,0)==Decision.Repair,"deferred generation did not repair on full exit");
+            s=Fresh(1,true);s.Deferred=true;s.Attempts=1;s.LastAttempt=Now.Ticks;
+            TestRunner.Assert(Eval(s,0,true,true,0)==Decision.Deferred,"deferred session spent a retry cooldown batch");
+            TestRunner.Assert(Eval(s,10,false,true,0)==Decision.Wait,"full exit bypassed persisted retry cooldown");
+            TestRunner.Assert(Eval(s,60,false,true,0)==Decision.Repair,"retry did not become available");
+        });
     }
 }
 }

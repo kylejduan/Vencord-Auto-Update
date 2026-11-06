@@ -39,7 +39,6 @@ internal static class WorkerTests {
         TestRunner.Run("deferred worker returns durable Deferred while exact cohort runs",delegate {using(var f=new Fixtures()) {
             Seed(f);var h=new FakeHost();h.Running(f.Root,7,181);var s=SupervisorTests.Make(f,h);
             var batch=new WorkerBatch(s);batch.Start(TimeSpan.Zero);batch.Step(TimeSpan.Zero);
-            h.Time=h.Time.AddSeconds(10);batch.Step(TimeSpan.FromSeconds(10));
             TestRunner.Assert((int?)batch.Result==65 && new StateStore(f.Cache).Find(f.Inspect().Generation).Deferred && h.Stops==0,"deferred work did not exit safely");
         }});
         TestRunner.Run("stable unsupported bytes refuse without mutation",delegate {using(var f=new Fixtures()) {

@@ -19,7 +19,7 @@ jobs:
       - name: Check release tag and source version
         shell: powershell
         run: |
-          if ($env:GITHUB_REF_NAME -ne 'v0.1.4') { throw 'This workflow only packages the implemented v0.1.4 source.' }
+          if ($env:GITHUB_REF_NAME -ne 'v0.1.5') { throw 'This workflow only packages the implemented v0.1.5 source.' }
           if ((git rev-parse HEAD).Trim() -ne (git rev-list -n 1 $env:GITHUB_REF_NAME).Trim()) { throw 'Release tag does not match checkout.' }
           if (git status --porcelain --untracked-files=normal) { throw 'Release source is dirty.' }
       - name: Core tests
@@ -28,6 +28,8 @@ jobs:
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\build.ps1
       - name: Native service scheduling and notification tests
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\test-service.ps1
+      - name: Sustained native idle resource qualification
+        run: .\artifacts\ServiceTests.exe --idle-probe 120
       - name: PowerShell parse and setup contracts
         shell: powershell
         run: |
@@ -59,4 +61,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME artifacts/VencordAutoUpdate-0.1.4-windows.zip artifacts/SHA256SUMS --verify-tag --title "Vencord Auto Update 0.1.4" --generate-notes
+          gh release create $env:GITHUB_REF_NAME artifacts/VencordAutoUpdate-0.1.5-windows.zip artifacts/SHA256SUMS --verify-tag --title "Vencord Auto Update 0.1.5" --generate-notes

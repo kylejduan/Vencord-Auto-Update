@@ -2,7 +2,7 @@ param([string]$AppExecutable)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $AppExecutable) { $AppExecutable = Join-Path $repo 'artifacts/VencordAutoUpdate.exe' }
-$assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $instanceFlags = [Reflection.BindingFlags]'NonPublic,Instance'
 $staticFlags = [Reflection.BindingFlags]'NonPublic,Static'
 if (-not $assembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary', $staticFlags).GetValue($null, $null)) {

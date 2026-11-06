@@ -15,7 +15,7 @@ try {
     $data=Join-Path $base 'Data';$root=Join-Path $base 'Discord'
     # A wrong-type kernel object at this exact fixture's stop-event name causes
     # a real instance-publication failure after successful argument parsing.
-    $assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+    $assembly=[Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
     if(-not $assembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary',[Reflection.BindingFlags]'NonPublic,Static').GetValue($null,$null)) {
         Invoke-Startup @('--worker','--data-dir',$data,'--discord-root',$root) 21
         Invoke-Startup @('--worker-host','--data-dir',$data,'--discord-root',$root) 21

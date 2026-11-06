@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo 'artifacts/VencordAutoUpdate.exe'
-$assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $flags = [Reflection.BindingFlags]'NonPublic,Instance'
 $static = [Reflection.BindingFlags]'NonPublic,Static'
 $type = $assembly.GetType('VencordAutoUpdate.Fixtures', $true)

@@ -4,13 +4,15 @@ namespace VencordAutoUpdate {
 internal sealed class UserEnrollment:IDisposable {
     readonly object gate=new object();readonly BrokerSchedule schedule;
     readonly RootNotifications notifications;readonly IWorkerLauncher launcher;readonly Action<string> report;readonly Action retiredDrained;
+    readonly Func<Func<bool>,bool> userFilesystem;
     readonly ScheduledDispatch deadline;readonly Timer dispatch,watchdog,completionProbe,resubscribe;int resubscribeAttempts;readonly ManualResetEvent drained=new ManualResetEvent(true);
     IWorkerProcess worker,stopWorker;DeferredProcessWaits processes;
     bool stopping,disposed,workerUnobserved,stopUnobserved;int queued;
     internal readonly UserSession User;
     internal DateTime? LastLaunch {get{lock(gate)return schedule.LastLaunch;}}
-    internal UserEnrollment(UserSession user,IWorkerLauncher launcher,Action<string> report,DateTime? previousLaunch,Action retiredDrained) {
+    internal UserEnrollment(UserSession user,IWorkerLauncher launcher,Action<string> report,DateTime? previousLaunch,Action retiredDrained,Func<Func<bool>,bool> userFilesystem=null) {
         User=user;this.launcher=launcher;this.report=report;this.retiredDrained=retiredDrained;schedule=new BrokerSchedule(previousLaunch);
+        this.userFilesystem=userFilesystem ?? (action=>action());
         notifications=new RootNotifications(user.Profile,user.Roots,Signal);
         dispatch=new Timer(Dispatch,null,Timeout.Infinite,Timeout.Infinite);deadline=new ScheduledDispatch(schedule,delegate{return BrokerClock.Now;},delegate(int delay){dispatch.Change(delay,Timeout.Infinite);});watchdog=new Timer(Watchdog,null,Timeout.Infinite,Timeout.Infinite);completionProbe=new Timer(ProbeCompletion,null,Timeout.Infinite,Timeout.Infinite);resubscribe=new Timer(Resubscribe,null,Timeout.Infinite,Timeout.Infinite);
     }
@@ -27,7 +29,7 @@ internal sealed class UserEnrollment:IDisposable {
             if(stopping || !deadline.Take())return;
             try {
                 // Subscribe before starting a worker's snapshot. Failure retains bounded pending work.
-                Subscribed(notifications.Refresh());worker=launcher.Launch(User,false);drained.Reset();
+                Subscribed(userFilesystem(notifications.Refresh));worker=launcher.Launch(User,false);drained.Reset();
                 IWorkerProcess launched=worker;worker.OnExit(delegate(int result){Completed(launched,result);});watchdog.Change(225000,Timeout.Infinite);
             }catch(Exception e) {
                 report("Worker dispatch failed for "+User.Sid+": "+e.Message);
@@ -48,7 +50,7 @@ internal sealed class UserEnrollment:IDisposable {
         lock(gate) {
             if(stopping || disposed)return;
             bool complete;
-            try{complete=notifications.Refresh();}catch(Exception e){report("Directory subscription retry failed for "+User.Sid+": "+e.Message);complete=false;}
+            try{complete=userFilesystem(notifications.Refresh);}catch(Exception e){report("Directory subscription retry failed for "+User.Sid+": "+e.Message);complete=false;}
             if(complete){resubscribeAttempts=0;DropProcesses();schedule.Signal(BrokerClock.Now);Arm();}
             else Subscribed(false);
         }
@@ -63,7 +65,7 @@ internal sealed class UserEnrollment:IDisposable {
             DropProcesses();
             if(mask!=0) {
                 try {
-                    processes=DeferredProcessWaits.Capture(User.Roots,mask,Exited);
+                    userFilesystem(delegate{processes=DeferredProcessWaits.Capture(User.Roots,mask,Exited);return true;});
                     if(!processes.Known){DropProcesses();result=22;}
                     else live=processes.LiveMask;
                 }catch(Exception e){report("Process exit enrollment failed: "+e.Message);DropProcesses();result=22;}

@@ -41,7 +41,8 @@ internal static partial class ServiceTests {
                 for(int i=0;i<200;i++)File.AppendAllText(log,"append\n");
                 Check(!changed.WaitOne(1500) && watches.Events==beforeLogs,"ordinary log appends do not wake the worker");
                 string renamedLog=Path.Combine(nested,"renamed.LOG");File.Move(log,renamedLog);
-                Check(!changed.WaitOne(1000),"ordinary log-to-log rename stays idle");
+                Check(changed.WaitOne(5000),"log-to-log name changes remain conservative notifications");
+                Thread.Sleep(300);while(changed.WaitOne(0)){}
                 string script=Path.Combine(nested,"module.js");File.Move(renamedLog,script);
                 Check(changed.WaitOne(5000),"log renamed into an installation file still notifies");
                 Thread.Sleep(300);while(changed.WaitOne(0)){}File.Move(script,log);

@@ -42,24 +42,7 @@ internal sealed class ProcessInspector {
         otherUser=candidate=>candidate!=session && KnownOtherUser(candidate,sid);
     }
     static int CurrentSession(){using(var current=Process.GetCurrentProcess())return current.SessionId;}
-    [DllImport("wtsapi32.dll",CharSet=CharSet.Unicode)]static extern bool WTSQuerySessionInformation(IntPtr server,int session,int information,out IntPtr value,out int bytes);
-    [DllImport("wtsapi32.dll")]static extern void WTSFreeMemory(IntPtr value);
-    static string SessionText(int session,int information) {
-        IntPtr value;int bytes;
-        if(!WTSQuerySessionInformation(IntPtr.Zero,session,information,out value,out bytes))return null;
-        try{return Marshal.PtrToStringUni(value);}finally{WTSFreeMemory(value);}
-    }
-    internal static bool KnownOtherUser(int session,string ownSid) {
-        try {
-            string name=SessionText(session,5),domain=SessionText(session,7);
-            if(String.IsNullOrEmpty(name) || String.IsNullOrEmpty(domain))return false;
-            var sid=(SecurityIdentifier)new NTAccount(domain,name).Translate(typeof(SecurityIdentifier));
-            return sid.Value!=ownSid;
-        }catch(IdentityNotMappedException){return false;}
-        catch(System.Security.SecurityException){return false;}
-        catch(UnauthorizedAccessException){return false;}
-        catch(ArgumentException){return false;}
-    }
+    internal static bool KnownOtherUser(int session,string ownSid){return SessionOwnership.KnownOtherUser(session,ownSid);}
     [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr process,int flags,StringBuilder path,ref int size);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);

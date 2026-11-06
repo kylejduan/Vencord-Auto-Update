@@ -1,4 +1,5 @@
-param([switch]$RequireAdmin)
+param([switch]$RequireAdmin,[switch]$LayoutOnly)
+if($RequireAdmin -and $LayoutOnly){throw 'Choose required SCM or layout-only coverage.'}
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'Setup.Fixture.ps1')
@@ -16,7 +17,9 @@ try {
     Check (-not (Compare-Object ($expected | Sort-Object) ($actual | Sort-Object))) 'ZIP has exact two EXEs/setup modules/docs/provenance inventory and no test or user data'
     foreach ($name in @('VencordAutoUpdate.exe','VencordAutoUpdate.Service.exe')) { Check ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $unpack $name)).FileVersion -eq '0.1.5.0') "ZIP $name version" }
     $source=Get-Content (Join-Path $unpack 'SOURCE.txt') -Raw
-    Check ($source -match '^Version: 0\.1\.4\r?\nCommit: [0-9a-f]{40}\r?\nDirty: (true|false)\r?\n$') 'SOURCE exact version/commit/dirty provenance without machine paths'
+    $version=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $unpack 'VencordAutoUpdate.exe'))
+    $expectedVersion=[regex]::Escape(('{0}.{1}.{2}' -f $version.FileMajorPart,$version.FileMinorPart,$version.FileBuildPart))
+    Check ($source -match ('^Version: '+$expectedVersion+'\r?\nCommit: [0-9a-f]{40}\r?\nDirty: (true|false)\r?\n$')) 'SOURCE exact version/commit/dirty provenance without machine paths'
     # Read-only packaged CLI is permitted elevated and never opens a setup UI.
     $data=Join-Path $fixture 'data'; $discord=Join-Path $fixture 'Discord'
     [IO.Directory]::CreateDirectory($discord) | Out-Null
@@ -31,7 +34,7 @@ try {
         Check ((Assert-SetupService $machine.Paths).State -eq 4) 'extracted ZIP installs/starts protected production service with quoted path'
         & (Join-Path $unpack 'uninstall.ps1') @args
         Check (-not [VencordSetup.Scm]::Read($machine.Paths.ServiceName)) 'extracted ZIP unregister readback'
-    } else { Write-Output 'SKIP package SCM install: layout/status verified only. Administrator CI requires -RequireAdmin.' }
+    } elseif ($LayoutOnly) { Write-Output 'PASS requested package layout/provenance/status coverage' } else { Write-Output 'SKIP package SCM install: layout/status verified only. Administrator CI requires -RequireAdmin.' }
 } finally {
     if ($machine) { Remove-MachineFixture $machine }
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }

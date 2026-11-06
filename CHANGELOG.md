@@ -4,7 +4,8 @@
 
 Reduces unnecessary notification and worker work while preserving restart consent and conservative repair guards.
 
-- Parent-folder watchers subscribe only to name changes. Ordinary log appends and log-to-log file renames no longer wake workers; installation-file renames, deleted paths, reparse points and directories named with a log suffix still notify.
+- Parent-folder watchers subscribe only to name changes. Ordinary log appends no longer wake workers; name changes and deletions still notify. Log filtering does not perform privileged filesystem lookups.
+- User-folder inspection and subscriptions run under the ordinary user token, with asynchronous identity flow suppressed. Deferred process-wait enrollment uses the same ordinary filesystem scope.
 - Process inspection excludes sessions confirmed to belong to another account before opening executable handles. Same-account sessions and unknown session ownership still receive the conservative process checks.
 - An already-deferred running session returns immediately instead of polling through file settling. Full-exit repair and retry cooldowns remain unchanged.
 - Metadata scans refuse oversized flat directories before adding more than the supported number of records.

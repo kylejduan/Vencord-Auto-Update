@@ -12,16 +12,10 @@ internal sealed class RootNotifications:IDisposable {
     internal long Events {get{return Interlocked.Read(ref events);}}
     void Changed(object sender,FileSystemEventArgs e) {
         RenamedEventArgs renamed=e as RenamedEventArgs;
-        // Ignore only proven ordinary log files. A missing/deleted path or a directory
-        // named *.log still matters, as does a rename across the log-file boundary.
-        if(IgnoredLog(e.FullPath,e.ChangeType) && (renamed==null || LogName(renamed.OldFullPath)))return;
+        // Changed log names are irrelevant to installation metadata. No filesystem
+        // lookup runs in a SYSTEM callback. Name changes and deletions remain signals.
+        if(e.ChangeType==WatcherChangeTypes.Changed && e.FullPath.EndsWith(".log",StringComparison.OrdinalIgnoreCase))return;
         if(Relevant(e.FullPath,e.ChangeType) || (renamed!=null && Relevant(renamed.OldFullPath,e.ChangeType))){Interlocked.Increment(ref events);signal();}
-    }
-    static bool LogName(string path){return path.EndsWith(".log",StringComparison.OrdinalIgnoreCase);}
-    static bool IgnoredLog(string path,WatcherChangeTypes type) {
-        if(type==WatcherChangeTypes.Deleted || !LogName(path))return false;
-        try{return (File.GetAttributes(path)&(FileAttributes.Directory|FileAttributes.ReparsePoint))==0;}
-        catch(IOException){return false;}catch(UnauthorizedAccessException){return false;}
     }
     // Anything at or inside a root matters. An ancestor matters only when it is created, deleted or
     // renamed: its timestamp changes whenever unrelated siblings (other apps' files in LocalAppData,

@@ -3,7 +3,7 @@ namespace VencordAutoUpdate {
 internal static partial class ServiceTests {
     static int count;
     internal static void Check(bool value,string message) {if(!value)throw new Exception(message);count++;}
-    static int Main(string[] args) {if(args.Length==1 && args[0]=="--fixture"){Console.ReadLine();return 0;}try {PendingDrainDeadlineTests();ShutdownDrainTests();FinalSchedulerTests();SchedulerTests();SecurityTests();NativeTests();EnrollmentTests();NativeRegistrationTests();DeferredEnrollmentTests();Console.WriteLine("PASS service assertions="+count);return 0;}catch(Exception e){Console.Error.WriteLine(e);return 1;}}
+    static int Main(string[] args) {if(args.Length==1 && args[0]=="--fixture"){Console.ReadLine();return 0;}try {if(args.Length==2 && args[0]=="--idle-probe"){IdleProbe(Int32.Parse(args[1]));return 0;}PendingDrainDeadlineTests();ShutdownDrainTests();FinalSchedulerTests();SchedulerTests();SecurityTests();UserFilesystemTests();NativeTests();EnrollmentTests();NativeRegistrationTests();DeferredEnrollmentTests();Console.WriteLine("PASS service assertions="+count);return 0;}catch(Exception e){Console.Error.WriteLine(e);return 1;}}
     static void SchedulerTests() {
         DateTime tick=new DateTime(2026,1,1,0,0,0,DateTimeKind.Utc);var pending=new BrokerSchedule(tick);pending.Signal(tick);
         int armed=-2,arms=0;var timer=new ScheduledDispatch(pending,delegate{return tick;},delegate(int delay){armed=delay;arms++;});timer.Arm();

@@ -32,7 +32,7 @@ internal sealed class BrokerService:ServiceBase {
                             // A previous session must drain before another worker for this SID is allowed.
                             bool blocked=false;foreach(var old in retired)if(old.User.Sid==user.Sid && !old.WaitForDrain(0)){blocked=true;break;}
                             if(blocked)continue;
-                            DateTime? previous;lastLaunch.TryGetValue(user.Sid,out previous);current=new UserEnrollment(user,launcher,Report,previous,Reconcile);users.Add(user.Sid,current);
+                            DateTime? previous;lastLaunch.TryGetValue(user.Sid,out previous);current=new UserEnrollment(user,launcher,Report,previous,Reconcile,action=>UserSessions.UserFilesystem(user,action));users.Add(user.Sid,current);
                         }
                         current.Signal();
                     }

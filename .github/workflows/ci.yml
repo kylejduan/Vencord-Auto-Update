@@ -19,6 +19,8 @@ jobs:
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\build.ps1
       - name: Native service scheduling and notification tests
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\test-service.ps1
+      - name: Sustained native idle resource qualification
+        run: .\artifacts\ServiceTests.exe --idle-probe 120
       - name: PowerShell parse and setup contracts
         shell: powershell
         run: |
@@ -49,5 +51,5 @@ jobs:
         with:
           name: windows-package
           path: |
-            artifacts/VencordAutoUpdate-0.1.4-windows.zip
+            artifacts/VencordAutoUpdate-0.1.5-windows.zip
             artifacts/SHA256SUMS

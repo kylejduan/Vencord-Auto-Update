@@ -39,10 +39,11 @@ internal sealed class Installation {
     // own find data, so one walk costs one directory enumeration instead of per-entry ancestor
     // and attribute queries. Record formats match SafePath.Metadata.
     static void WalkMetadata(DirectoryInfo directory, string ignoreArchivesIn, List<string> records, int depth) {
-        if (depth > 64 || records.Count > 100000) throw new IOException("Installation metadata scan exceeds supported bounds.");
+        if (depth > 64 || records.Count >= 100000) throw new IOException("Installation metadata scan exceeds supported bounds.");
         records.Add(directory.FullName + "|directory");
         bool resources = directory.Name == "resources", archives = SafePath.Same(directory.FullName,ignoreArchivesIn);
         foreach (FileSystemInfo item in directory.EnumerateFileSystemInfos()) {
+            if(records.Count>=100000)throw new IOException("Installation metadata scan exceeds supported bounds.");
             if ((item.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Reparse points are unsupported: " + item.FullName);
             string name = item.Name;
             if (resources && (name == RepairTransaction.JournalName || (name.StartsWith(".vencord-auto-update.",StringComparison.Ordinal) && name.EndsWith(".loader.tmp",StringComparison.Ordinal)))) continue;

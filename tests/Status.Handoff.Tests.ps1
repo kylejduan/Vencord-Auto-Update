@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $flags=[Reflection.BindingFlags]'NonPublic,Instance';$static=[Reflection.BindingFlags]'NonPublic,Static'
 if(-not $assembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary',$static).GetValue($null,$null)){Write-Output 'SKIP ordinary-token Status release handoff';exit 0}
 $type=$assembly.GetType('VencordAutoUpdate.Fixtures',$true);$instanceType=$assembly.GetType('VencordAutoUpdate.InstanceControl',$true)

@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$assembly=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/VencordAutoUpdate.exe')))
+$assembly=[Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/VencordAutoUpdate.exe'))
 Add-Type -AssemblyName System.Windows.Forms
 $type=$assembly.GetType('VencordAutoUpdate.RestartDialog',$true)
 $flags=[Reflection.BindingFlags]'NonPublic,Instance'
@@ -19,7 +19,7 @@ try {
 } finally { $dialog.Dispose() }
 # Use the real supervisor's validity callback with its injected UTC host, plus
 # the dialog's injected elapsed boundary. No actual host clock is modified.
-$core=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$core=[Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $static=[Reflection.BindingFlags]'NonPublic,Static'
 $fixtureType=$core.GetType('VencordAutoUpdate.Fixtures',$true)
 $hostType=$core.GetType('VencordAutoUpdate.FakeHost',$true)

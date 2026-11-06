@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 namespace VencordAutoUpdate {
 internal sealed class ProcessIdentity {
@@ -33,6 +34,15 @@ internal sealed class ProcessSnapshot {
     internal bool Quiet { get {return Known && !Updater && Discord.Count==0;} }
 }
 internal sealed class ProcessInspector {
+    readonly Func<int,bool> otherUser;
+    internal ProcessInspector(Func<int,bool> otherUserSession=null) {
+        if(otherUserSession!=null){otherUser=otherUserSession;return;}
+        int session=CurrentSession();string sid;
+        using(var identity=WindowsIdentity.GetCurrent())sid=identity.User.Value;
+        otherUser=candidate=>candidate!=session && KnownOtherUser(candidate,sid);
+    }
+    static int CurrentSession(){using(var current=Process.GetCurrentProcess())return current.SessionId;}
+    internal static bool KnownOtherUser(int session,string ownSid){return SessionOwnership.KnownOtherUser(session,ownSid);}
     [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr process,int flags,StringBuilder path,ref int size);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
@@ -53,19 +63,25 @@ internal sealed class ProcessInspector {
     internal ProcessSnapshot Snapshot(Channel channel) {
         ProcessSnapshot result=new ProcessSnapshot();
         var found=new List<ProcessIdentity>();var parents=new Dictionary<int,int>();
+        var sessions=new Dictionary<int,bool>();
         foreach(string name in new [] {"Discord","DiscordPTB","DiscordCanary","Update"}) {
             Process[] processes;
             try {processes=Process.GetProcessesByName(name);} catch(Win32Exception) {result.Known=false;continue;}
             foreach(Process p in processes) using(p) {
                 try {
+                    // Exclude only a confirmed different account. The same account in
+                    // another session may use this root; unknown identity stays conservative.
+                    int session=p.SessionId;bool skip;
+                    if(!sessions.TryGetValue(session,out skip)){skip=otherUser(session);sessions.Add(session,skip);}
+                    if(skip)continue;
                     int parent;string path=Describe(p.Id,out parent);
                     if(!AppPaths.Under(path,channel.Root)) continue;
                     if(name=="Update") result.Updater=true;
                     else {found.Add(new ProcessIdentity(p.Id,p.StartTime.ToUniversalTime().Ticks,path));parents[p.Id]=parent;}
                 } catch(Exception e) {
                     if(!(e is Win32Exception) && !(e is InvalidOperationException) && !(e is IOException) && !(e is UnauthorizedAccessException) && !(e is ArgumentException)) throw;
-                    // A process which disappeared is harmless. Inaccessible relevant names fail closed,
-                    // even when their root cannot be established.
+                    // A process which disappeared is harmless. Unknown session or inaccessible
+                    // same-session names fail closed, even when their root is not established.
                     try {if(!p.HasExited) result.Known=false;}catch {result.Known=false;}
                 }
             }

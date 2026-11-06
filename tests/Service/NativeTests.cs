@@ -23,6 +23,7 @@ internal static partial class ServiceTests {
                     self.Refresh();int before=self.HandleCount;TimeSpan cpu=self.TotalProcessorTime;long notifications=watches.Events;
                     Thread.Sleep(2000);self.Refresh();Console.WriteLine("Nonprivileged fixture host idle: cpu_ms="+(self.TotalProcessorTime-cpu).TotalMilliseconds+" working_set="+self.WorkingSet64+" handles="+self.HandleCount+" notification_delta="+(watches.Events-notifications));Check(watches.Events==notifications,"idle watcher has no activity");
                     for(int i=0;i<50;i++) {using(var cycle=new RootNotifications(fixture,new[]{root,dist},delegate{})){cycle.Refresh();}var schedule=new BrokerSchedule();DateTime time=DateTime.UtcNow;schedule.Signal(time);Check(schedule.Take(time),"cycle dispatch");schedule.Complete(0,0,time);Check(schedule.Due==null,"cycle idle");using(var waits=OwnedProcessWaits.Capture(new[]{root},delegate{})){Check(waits.Known && waits.Count==0,"cycle process census empty");}}
+                    self.Refresh();Console.WriteLine("Nonprivileged fixture host 50-cycle handles before GC: before="+before+" after="+self.HandleCount);
                     GC.Collect();GC.WaitForPendingFinalizers();self.Refresh();Console.WriteLine("Nonprivileged fixture host 50-cycle handles: before="+before+" after="+self.HandleCount);Check(self.HandleCount<=before+8,"50-cycle bounded handles");
                 }
             }
@@ -35,6 +36,22 @@ internal static partial class ServiceTests {
                 string churn=Path.Combine(local,"unrelated.tmp");File.WriteAllText(churn,"x");File.Delete(churn);
                 Check(ancestor.WaitOne(5000),"fixture produces the ancestor timestamp notification");
                 Check(!changed.WaitOne(1500),"unrelated sibling churn under an ancestor stays idle");
+                string log=Path.Combine(nested,"dispatch.log");File.WriteAllText(log,"initial");Thread.Sleep(300);while(changed.WaitOne(0)){}
+                long beforeLogs=watches.Events;
+                for(int i=0;i<200;i++)File.AppendAllText(log,"append\n");
+                Check(!changed.WaitOne(1500) && watches.Events==beforeLogs,"ordinary log appends do not wake the worker");
+                string renamedLog=Path.Combine(nested,"renamed.LOG");File.Move(log,renamedLog);
+                Check(changed.WaitOne(5000),"log-to-log name changes remain conservative notifications");
+                Thread.Sleep(300);while(changed.WaitOne(0)){}
+                string script=Path.Combine(nested,"module.js");File.Move(renamedLog,script);
+                Check(changed.WaitOne(5000),"log renamed into an installation file still notifies");
+                Thread.Sleep(300);while(changed.WaitOne(0)){}File.Move(script,log);
+                Check(changed.WaitOne(5000),"installation file renamed to a log still notifies");
+                string logDirectory=Path.Combine(nested,"directory.log");Directory.CreateDirectory(logDirectory);
+                Check(changed.WaitOne(5000),"directory with log suffix still notifies");
+                Thread.Sleep(300);while(changed.WaitOne(0)){}Directory.Delete(logDirectory);
+                Check(changed.WaitOne(5000),"deleted directory with log suffix still notifies");
+                File.Delete(log);Thread.Sleep(300);while(changed.WaitOne(0)){}
                 string asar=Path.Combine(nested,"app.asar");File.WriteAllText(asar,"fixture");Check(changed.WaitOne(5000),"nested root change still notifies");
                 File.Delete(asar);Thread.Sleep(500);while(changed.WaitOne(0)){}
                 Directory.Delete(nested);Check(changed.WaitOne(5000),"empty nested root deletion notifies");

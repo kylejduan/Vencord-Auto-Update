@@ -1,8 +1,20 @@
 # Changelog
 
+## 0.1.5
+
+Reduces unnecessary notification and worker work while preserving restart consent and conservative repair guards.
+
+- Parent-folder watchers subscribe only to name changes. Ordinary log appends no longer wake workers; name changes and deletions still notify. Log filtering does not perform privileged filesystem lookups.
+- User-folder inspection and subscriptions run under the ordinary user token, with asynchronous identity flow suppressed. Deferred process-wait enrollment uses the same ordinary filesystem scope.
+- Process inspection excludes sessions confirmed to belong to another account before opening executable handles. Same-account sessions and unknown session ownership still receive the conservative process checks.
+- An already-deferred running session returns immediately instead of polling through file settling. Full-exit repair and retry cooldowns remain unchanged.
+- Metadata scans refuse oversized flat directories before adding more than the supported number of records.
+- Documentation states exactly when background-staged updates remain deferred and how to handle a stopped service that reports a failed exit.
+- Native Windows test scripts load test assemblies by path, and the ordinary-user acceptance runner rejects skipped GUI coverage.
+
 ## 0.1.4
 
-Fixes the automatic restart after a Discord update, verified end to end on a real Discord Stable install with a simulated host update.
+Fixes countdown cancellation caused by child-process churn and log writes when an update is first observed in an eligible young session. Verified on a real Discord Stable install with a simulated host update; background-staged updates first seen in an established session can remain deferred.
 
 - The restart countdown identifies a Discord session by its main process only. Discord's child processes (GPU, renderer, utility, crash handler) start and exit throughout a session; previously the first such change after an update restart deferred the generation, so the countdown rarely appeared. Stopping a session still ends every Discord process under the root that existed when termination began, and never chases a session started afterwards.
 - Discord's own log files (for example the module updater's dispatch.log, written about 30 seconds after start) no longer count as installation changes. Previously they reset settling and cancelled a countdown already on screen.

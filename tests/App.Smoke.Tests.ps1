@@ -32,7 +32,7 @@ try {
     $bad = Start-Owned @('--unknown')
     [void](Wait-Code $bad 2)
     Write-Output 'PASS command error returns exit 2'
-    $tokenAssembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($exe))
+    $tokenAssembly = [Reflection.Assembly]::LoadFrom($exe)
     $tokenFlags = [Reflection.BindingFlags]'Static,NonPublic'
     if (-not $tokenAssembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary',$tokenFlags).GetValue($null,$null)) {
         Write-Output 'SKIP ordinary-user status UI fixture on elevated/service token; read-only CLI passed'
@@ -99,7 +99,7 @@ public static class LayoutBounds {
     # font autoscaling without changing Windows display settings or real app roots.
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    $assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($exe))
+    $assembly = [Reflection.Assembly]::LoadFrom($exe)
     $channelType = $assembly.GetType('VencordAutoUpdate.Channel', $true)
     $listType = [Collections.Generic.List`1].MakeGenericType(@($channelType))
     $channels = [Activator]::CreateInstance($listType)

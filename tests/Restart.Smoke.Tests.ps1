@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $repo = (Get-Item (Join-Path $PSScriptRoot '..')).FullName
-$assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $repo 'artifacts/CoreTests.exe')))
+$assembly = [Reflection.Assembly]::LoadFrom((Join-Path $repo 'artifacts/CoreTests.exe'))
 $instanceFlags = [Reflection.BindingFlags]'NonPublic,Instance'
 $staticFlags = [Reflection.BindingFlags]'NonPublic,Static'
 if (-not $assembly.GetType('VencordAutoUpdate.WorkerIdentity').GetProperty('Ordinary', $staticFlags).GetValue($null, $null)) {

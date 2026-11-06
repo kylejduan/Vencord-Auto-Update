@@ -12,6 +12,9 @@ internal sealed class RootNotifications:IDisposable {
     internal long Events {get{return Interlocked.Read(ref events);}}
     void Changed(object sender,FileSystemEventArgs e) {
         RenamedEventArgs renamed=e as RenamedEventArgs;
+        // Changed log names are irrelevant to installation metadata. No filesystem
+        // lookup runs in a SYSTEM callback. Name changes and deletions remain signals.
+        if(e.ChangeType==WatcherChangeTypes.Changed && e.FullPath.EndsWith(".log",StringComparison.OrdinalIgnoreCase))return;
         if(Relevant(e.FullPath,e.ChangeType) || (renamed!=null && Relevant(renamed.OldFullPath,e.ChangeType))){Interlocked.Increment(ref events);signal();}
     }
     // Anything at or inside a root matters. An ancestor matters only when it is created, deleted or
@@ -50,7 +53,9 @@ internal sealed class RootNotifications:IDisposable {
         foreach(var entry in desired) {
             FileSystemWatcher watcher=null;
             try {
-                watcher=new FileSystemWatcher(entry.Key){IncludeSubdirectories=entry.Value,NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.LastWrite|NotifyFilters.Size};
+                var filter=NotifyFilters.FileName|NotifyFilters.DirectoryName;
+                if(entry.Value)filter|=NotifyFilters.LastWrite|NotifyFilters.Size;
+                watcher=new FileSystemWatcher(entry.Key){IncludeSubdirectories=entry.Value,NotifyFilter=filter};
                 watcher.Created+=Changed;watcher.Changed+=Changed;watcher.Deleted+=Changed;watcher.Renamed+=Changed;watcher.Error+=Error;watcher.EnableRaisingEvents=true;
                 replacement.Add(entry.Key,watcher);
             }catch(Exception e) {

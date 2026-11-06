@@ -20,11 +20,13 @@ internal static class RestartPolicy {
     internal static Decision Evaluate(GenerationState state, DateTime now, DateTime settledSince,
         bool running, string cohort, bool interactive, bool automatic, long lastRestart) {
         if (state.Attempts>=3 || state.VerificationFailed) return Decision.Exhausted;
+        // A running session that cannot be restarted needs no settling polls. Full
+        // exit still takes the normal stable-files and retry-cooldown path below.
+        if (running && (!interactive || !automatic || !state.Eligible || state.Deferred || state.Reserved || state.Cohort!=cohort ||
+            (lastRestart!=0 && now.Ticks-lastRestart < TimeSpan.FromMinutes(10).Ticks))) return Decision.Deferred;
         if (now-settledSince < TimeSpan.FromSeconds(10) ||
             (state.LastAttempt!=0 && now.Ticks-state.LastAttempt < TimeSpan.FromSeconds(60).Ticks)) return Decision.Wait;
         if (!running) return Decision.Repair;
-        if (!interactive || !automatic || !state.Eligible || state.Deferred || state.Reserved || state.Cohort!=cohort ||
-            (lastRestart!=0 && now.Ticks-lastRestart < TimeSpan.FromMinutes(10).Ticks)) return Decision.Deferred;
         return Decision.Countdown;
     }
 }

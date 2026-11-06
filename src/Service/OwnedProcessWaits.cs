@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
@@ -18,13 +19,19 @@ internal sealed class OwnedProcessWaits:IDisposable {
     internal bool AllExited {get{foreach(var handle in handles)if(!handle.WaitOne(0))return false;return true;}}
     internal static OwnedProcessWaits Capture(string[] roots,Action exit) {
         var result=new OwnedProcessWaits();result.Known=true;
+        string sid;using(var identity=WindowsIdentity.GetCurrent())sid=identity.User.Value;
+        var sessions=new Dictionary<int,bool>();
         try {
             foreach(string name in new[]{"Discord","DiscordPTB","DiscordCanary","Update"}) {
                 foreach(Process process in Process.GetProcessesByName(name))using(process) {
                     ProcessWait handle=null;
                     try {
+                        int session=process.SessionId;bool skip;
+                        if(!sessions.TryGetValue(session,out skip)){skip=SessionOwnership.KnownOtherUser(session,sid);sessions.Add(session,skip);}
+                        if(skip)continue;
                         IntPtr raw=OpenProcess(0x1000|0x100000,false,process.Id);if(raw==IntPtr.Zero)throw new Win32Exception();handle=new ProcessWait(raw);
                         var image=new StringBuilder(32768);int length=image.Capacity;if(!QueryFullProcessImageName(raw,0,image,ref length))throw new Win32Exception();
+                        // Capture runs in the ordinary user filesystem scope in production.
                         string path=TrustedPaths.RequireLocal(image.ToString());bool match=false;
                         foreach(string root in roots)if(TrustedPaths.IsUnder(path,TrustedPaths.RequireLocal(root))){match=true;break;}
                         if(!match)continue;

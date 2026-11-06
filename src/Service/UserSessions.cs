@@ -5,12 +5,22 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using System.Threading;
 namespace VencordAutoUpdate {
 internal sealed class UserSession {
     internal readonly int Id;internal readonly string Sid,Profile;internal readonly string[] Roots;
     internal UserSession(int id,string sid,string profile,string[] roots){Id=id;Sid=sid;Profile=profile;Roots=roots;}
 }
 internal static class UserSessions {
+    // All user-path IO and subscriptions run with the revalidated ordinary token.
+    // Suppress context capture so watcher callbacks cannot carry this identity into dispatch.
+    internal static T WithIdentity<T>(WindowsIdentity identity,Func<T> action) {
+        if(ExecutionContext.IsFlowSuppressed())using(var context=identity.Impersonate())return action();
+        using(ExecutionContext.SuppressFlow())using(var context=identity.Impersonate())return action();
+    }
+    internal static bool UserFilesystem(UserSession user,Func<bool> action) {
+        using(var token=OrdinaryToken(user.Id,user.Sid))using(var identity=new WindowsIdentity(token.DangerousGetHandle()))return WithIdentity(identity,action);
+    }
     internal static TokenHandle OrdinaryToken(int session,string expectedSid) {
         TokenHandle source;if(!SessionNative.WTSQueryUserToken(session,out source))throw new Win32Exception();
         using(source) {
@@ -33,11 +43,13 @@ internal static class UserSessions {
     static string KnownFolder(TokenHandle token,string id) {Guid folder=new Guid(id);IntPtr path;int hr=SessionNative.SHGetKnownFolderPath(ref folder,0x4000,token,out path);if(hr!=0)Marshal.ThrowExceptionForHR(hr);try{return Marshal.PtrToStringUni(path);}finally{Marshal.FreeCoTaskMem(path);}}
     internal static UserSession Describe(int session) {
         using(TokenHandle token=OrdinaryToken(session,null))using(var identity=new WindowsIdentity(token.DangerousGetHandle())) {
+            return WithIdentity(identity,delegate {
             var profile=new StringBuilder(32768);int size=profile.Capacity;if(!SessionNative.GetUserProfileDirectory(token,profile,ref size))throw new Win32Exception();
             string home=TrustedPaths.RequireLocal(profile.ToString());
             string local=TrustedPaths.WithinProfile(home,KnownFolder(token,"F1B32785-6FBA-4FCF-9D55-7B8E7F157091"));
             string roaming=TrustedPaths.WithinProfile(home,KnownFolder(token,"3EB685DB-65F9-4CF6-A03A-E3EF65729F3D"));
             return new UserSession(session,identity.User.Value,home,new[]{Path.Combine(local,"Discord"),Path.Combine(local,"DiscordPTB"),Path.Combine(local,"DiscordCanary"),Path.Combine(roaming,"Vencord","dist")});
+            });
         }
     }
     internal static bool IsInteractive(int session) {
